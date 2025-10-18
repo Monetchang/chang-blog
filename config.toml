@@ -1,7 +1,8 @@
-baseURL = "https://your-domain.com/"
+baseURL = "http://8.138.251.169/"
 languageCode = "zh-cn"
-name = "硅基突触"
-description = "一个专注于人工智能技术深度解析的博客。从神经网络的内在机制到Prompt工程的精妙艺术，我们追踪AI技术的每一个进化节点，分享实用技巧与前沿思考。"
+title = "硅基突触"
+description = "在碳基生命与硅基智能的交汇处，我们记录AI技术的每一次突触连接。这里不仅是代码与算法的集合，更是对人类认知边界的前沿探索，思考机器如何重塑我们的思维方式与世界认知。"
+theme = "hugo-blog-awesome"
 
 # ✅ 替换 paginate
 [pagination]
@@ -14,7 +15,7 @@ buildExpired = false
 
 # ✅ 主题参数
 [params]
-  description = "专注于 RAG、LLM、Agent 与 AI 应用落地的技术笔记。"
+  description = "在碳基生命与硅基智能的交汇处，我们记录AI技术的每一次突触连接。这里不仅是代码与算法的集合，更是对人类认知边界的前沿探索，思考机器如何重塑我们的思维方式与世界认知。"
   dateFormat = "2006-01-02"
   colorScheme = "auto"
   enableSearch = true
@@ -25,15 +26,16 @@ buildExpired = false
 
 # ✅ 正确的 author 格式
 [params.author]
-  name = "原华 Chang"
   avatar = "images/avatar.png"
-  bio = "记录 AI 工程化与信息智能时代的思考。"
+  intro = "硅基突触"
+  name = "Yuanhua Chang"
+  description = "在碳基生命与硅基智能的交汇处，我们记录AI技术的每一次突触连接。这里不仅是代码与算法的集合，更是对人类认知边界的前沿探索，思考机器如何重塑我们的思维方式与世界认知。"
 
 # ✅ 页脚配置
 [params.footer]
   since = 2024
   poweredBy = true
-  copyright = "© 2025 原华"
+  copyright = "© 2025 Yuanhua"
 
 # ✅ 导航菜单
 [[menu.main]]
