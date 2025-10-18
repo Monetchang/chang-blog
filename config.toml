@@ -1,19 +1,59 @@
 baseURL = "https://your-domain.com/"
 languageCode = "zh-cn"
-defaultContentLanguage = "zh"
 title = "硅基突触"
 theme = "hugo-blog-awesome"
+paginate = 10
 
-[languages.zh]
-  title = "硅基突触"
-  languageName = "中文"
+# 构建设置
+buildDrafts = false
+buildFuture = false
+buildExpired = false
+
+# 参数配置
+[params]
+  author = "Yuanhua Chang"
+  description = "专注于 RAG、LLM、Agent 与 AI 应用落地的技术笔记。"
+  dateFormat = "2006-01-02"
+  colorScheme = "auto"     # 支持: "light" | "dark" | "auto"
+  enableSearch = true
+  enableTags = true
+  enableCategories = true
+  toc = true
+  showReadingTime = true
+
+  [params.profile]
+    enable = true
+    avatar = "images/avatar.png"
+    name = "Yuanhua Chang"
+    bio = "记录 AI 工程化与信息智能时代的思考。"
+
+  [params.footer]
+    since = 2024
+    poweredBy = true
+    copyright = "© 2025 原华"
+
+# 导航菜单
+[[menu.main]]
+  name = "首页"
+  url = "/"
   weight = 1
 
-[languages.en]
-  title = "Silicon Synapse"
-  languageName = "English" 
+[[menu.main]]
+  name = "归档"
+  url = "/archives/"
   weight = 2
 
-[taxonomies]
-  tag = "tags"
-  category = "categories"
+[[menu.main]]
+  name = "标签"
+  url = "/tags/"
+  weight = 3
+
+[[menu.main]]
+  name = "分类"
+  url = "/categories/"
+  weight = 4
+
+[[menu.main]]
+  name = "关于"
+  url = "/about/"
+  weight = 5
