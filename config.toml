@@ -1,4 +1,19 @@
-baseURL = 'http://example.org/'
-languageCode = 'en-us'
-title = 'My New Hugo Site'
-theme = 'ananke'
+baseURL = "https://your-domain.com/"
+languageCode = "zh-cn"
+defaultContentLanguage = "zh"
+title = "硅基突触"
+theme = "ananke"
+
+[languages.zh]
+  title = "硅基突触"
+  languageName = "中文"
+  weight = 1
+
+[languages.en]
+  title = "Silicon Synapse"
+  languageName = "English" 
+  weight = 2
+
+# Ananke 主题特定配置
+[params]
+  description = "AI 技术分享与思考"
