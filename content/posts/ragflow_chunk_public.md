@@ -2,6 +2,8 @@
 title: "【解密源码】 RAGFlow 切分最佳-实践公共部分"
 date: 2025-10-16T20:39:10+08:00
 draft: true
+tags: ["源码","技术",RAG]
+categories: ["RAGFlow"]
 ---
 
 # 引言

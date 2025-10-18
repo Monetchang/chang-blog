@@ -2,6 +2,8 @@
 title: "【解密源码】 RAGFlow 切分最佳实践-navie 模式 docx 文件"
 date: 2025-10-18T10:39:10+08:00
 draft: true
+tags: ["源码","技术",RAG]
+categories: ["RAGFlow"]
 ---
 # 引言
 
@@ -15,183 +17,7 @@ draft: true
 
 # 手撕版
 
-## 统一配置
-
-```python
-is_english = lang.lower() == "english"  # is_english(cks)
-parser_config = kwargs.get(
-	  "parser_config", {
-      "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
-doc = {
-	  "docnm_kwd": filename,
-	  "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-}
-doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
-```
-
-进行解析前的基础配置，包括语言，chunk token 数，分隔符，识别策略，分词器 tokenize。这里重点看下分词器的实现，可以看到这里有存在两个分词器 rag_tokenizer.tokenize 和 rag_tokenizer.fine_grained_tokenize，可以理解成基础分词器和二次分词器。
-
-## tokenize
-
-```python
-line = re.sub(r"\W+", " ", line) # 移除非字母数字字符，用空格替换
-line = self._strQ2B(line).lower() # 全角转半角，并转为小写
-line = self._tradi2simp(line) # 繁体中文转简体中文
-```
-
-文本前置处理
-
-```python
-arr = self._split_by_lang(line)
-```
-
-根据语言进行初步切分，切分规则 `r"([ ,\.<>/?;:'\[\]\\`!@#$%^&*\(\)\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-zA-Z0-9,\.-]+)"`
-
-1. **标点符号分割**
-    - **英文标点**：`,.<>/?;:'[]\`!@#$%^&*(){}|_+-=`
-    - **中文标点**：`《》，。？、；‘’：“”【】~！￥%……（）——`
-    - **匹配模式**：一个或多个连续的标点符号
-2. **英文数字序列**
-    - **字母**：a-z, A-Z
-    - **数字**：0-9
-    - **特定符号**：逗号、点号、连字符
-    - **匹配模式**：一个或多个连续的英文数字字符
-
-```python
-for L, lang in arr:
-    if not lang:  # 非中文文本（英文等）
-        # 使用NLTK进行英文分词、词形还原和词干提取
-        res.extend([self.stemmer.stem(self.lemmatizer.lemmatize(t)) 
-                   for t in word_tokenize(L)])
-        continue
-    
-    if len(L) < 2 or re.match(r"[a-z\.-]+$", L) or re.match(r"[0-9\.-]+$", L):
-        res.append(L)  # 短文本、纯英文或纯数字直接保留
-        continue
-```
-
-如果输入语言非中文，使用 nltk 库提取文本，通过分词，词干提取和词性还原三个步骤处理非中文文本。
-
-对短文本，纯英文和纯数字三种情况的文本进行直接保留。
-
-```python
-tks, s = self.maxForward_(L) # 正向最大匹配分词
-tks1, s1 = self.maxBackward_(L) # 反向最大匹配分词
-```
-
-使用  datrie 库对文本使用正，反双向匹配分词方案。
-
-1. **正向分词的优点：**
-    - **符合阅读习惯**：从左到右，与人眼阅读方向一致
-    - **实现简单**：逻辑直观，易于理解和调试
-    - **效率较高**：通常比反向分词稍快
-2. **反向分词的优点：**
-    - **解决歧义能力强**：对某些结构能获得更准确的结果
-    - **处理未登录词更好**：对后缀丰富的语言更有效
-
-```python
-i, j, _i, _j = 0, 0, 0, 0
-same = 0
-while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
-    same += 1
-if same > 0:
-    res.append(" ".join(tks[j: j + same]))
-_i = i + same
-_j = j + same
-j = _j + 1
-i = _i + 1
-
-while i < len(tks1) and j < len(tks):
-    tk1, tk = "".join(tks1[_i:i]), "".join(tks[_j:j])
-    if tk1 != tk:
-        if len(tk1) > len(tk):
-            j += 1
-        else:
-            i += 1
-        continue
-
-    if tks1[i] != tks[j]:
-        i += 1
-        j += 1
-        continue
-    # backward tokens from_i to i are different from forward tokens from _j to j.
-    tkslist = []
-    self.dfs_("".join(tks[_j:j]), 0, [], tkslist)
-    res.append(" ".join(self.sortTks_(tkslist)[0][0]))
-
-    same = 1
-    while i + same < len(tks1) and j + same < len(tks) and tks1[i + same] == tks[j + same]:
-        same += 1
-    res.append(" ".join(tks[j: j + same]))
-    _i = i + same
-    _j = j + same
-    j = _j + 1
-    i = _i + 1
-
-if _i < len(tks1):
-    assert _j < len(tks)
-    assert "".join(tks1[_i:]) == "".join(tks[_j:])
-    tkslist = []
-    self.dfs_("".join(tks[_j:]), 0, [], tkslist)
-    res.append(" ".join(self.sortTks_(tkslist)[0][0]))
-```
-
-对正，反两种分词结果，分词相同的部分进行合并；分词有歧义的部分使用 DFS 算法穷举出所有分词路径，后对各种分词路径进行多维度评分，评分基于惩罚过度细分的分词结果，长词比例项，词频等维度，消除分词分歧，返回最终的分词结果。
-
-## fine_grained_tokenize
-
-对经过基础分词器 tokenize 的分词结果再次进行精细分词
-
-```python
-def fine_grained_tokenize(self, tks):
-    tks = tks.split()
-    zh_num = len([1 for c in tks if c and is_chinese(c[0])])
-    if zh_num < len(tks) * 0.2:
-        res = []
-        for tk in tks:
-            res.extend(tk.split("/"))
-        return " ".join(res)
-```
-
-对文本中中文占比小于 20% 的文本采用简单处理
-
-```python
-for tk in tks:
-    if len(tk) < 3 or re.match(r"[0-9,\.-]+$", tk):
-        res.append(tk)  # 直接保留
-        continue
-```
-
-对短词短语直接保留
-
-```python
-tkslist = []
-if len(tk) > 10:
-    tkslist.append(tk)  # 超长词不进一步切分
-else:
-    self.dfs_(tk, 0, [], tkslist)  # 使用DFS寻找所有可能切分
-if len(tkslist) < 2:  # 只有一种切分方式
-    res.append(tk)     # 直接使用原词
-    continue
-
-stk = self.sortTks_(tkslist)[1][0]  # 选择评分第二的方案
-```
-
-长度大于 10 的认为是固定搭配，不做处理，小于 10 的通过 DFS 分词 + 评分处理。
-
-```python
- if re.match(r"[a-z\.-]+$", tk):
-    for t in stk:
-        if len(t) < 3:
-            stk = tk
-            break
-    else:
-        stk = " ".join(stk)
-```
-
-短英文单词不被切分，英文短语简单空格切分。
-
-## 文件配置
+## 文件分类
 
 **以上是针对所有文件类型的统一解析配置，接下来就是根据不同文件后缀名分别处理**
 
@@ -217,7 +43,7 @@ else:
 	      "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 ```
 
-### .docx 文件解析
+## .docx 文件解析
 
 重点部分，对 docx 文件内容进行切分
 
@@ -235,7 +61,7 @@ class Docx(DocxParser):
     pass
 ```
 
-**DocxParser 基类**
+### DocxParser 基类
 
 ```python
 class RAGFlowDocxParser:
@@ -273,13 +99,13 @@ class RAGFlowDocxParser:
 
 基类 DocxParser ****中有以下函数：
 
-**__extract_table_content：**表格内容提取入口
+**__extract_table_content**：表格内容提取入口
 
 **__compose_table_content**：表格内容提取核心
 
-**__call__**：主方法，对 docx 文档中的段落和表格分别进行处理
+**\_\_call__**：docx 文档中的段落和表格分别进行处理
 
-**__compose_table_content 方法**
+#### __compose_table_content
 
 ```python
  def blockType(b):
@@ -413,11 +239,11 @@ return ["\n".join(lines)]
 
 输出格式美化，列数多的表格按照分割符形式单行输出，列数少的表格按照更易读的换行形式输出。
 
-**DocxParser 基类中所有功能主要包括解析出 docx 文件中 paragraphs 和 tables，通过固定格式输出。**
+**总结：DocxParser 基类中所有功能主要包括解析出 docx 文件中 paragraphs 和 tables，通过固定格式输出。**
 
 ---
 
-**Docx 类**
+### Docx 类
 
 ```python
 class Docx(DocxParser):
@@ -434,15 +260,15 @@ class Docx(DocxParser):
 
 类 **Docx** 中有以下函数：
 
-**get_picture：**从指定的 word 段落中提取所有内嵌图片，并合并为一张图片返回。输出的 **PIL (Pillow) Image 对象，颜色模式是 RGB。**
+**get_picture**：从指定的 word 段落中提取所有内嵌图片，并合并为一张图片返回。输出的 **PIL (Pillow) Image 对象，颜色模式是 RGB。**
 
 **__clean**：替换全角空格为半角。
 
 **__get_nearest_title**：获取内容相关标题，构建标题链。
 
-**__call__**：主方法，对 docx 文档中的段落和表格分别进行处理
+**\_\_call__**：对 docx 文档中的段落和表格分别进行处理
 
-**__get_nearest_title 函数**
+#### __get_nearest_title
 
 ```python
 # Get document name from filename parameter
@@ -534,7 +360,7 @@ if nearest_title:
 
 如果关联不是一级标题，则逐级向上查找副标题，在 titles 中构建完整的标题链。
 
-**__call__ 函数**
+#### \_\_call__
 
 ```python
 lines = []
@@ -635,7 +461,7 @@ return new_line, tbls
 ]
 ```
 
-**Docx 类中主要针对 .docx 文档中的内容，包括图片和表格进行了格式化处理并输出。**
+**总结：Docx 类中主要针对 .docx 文档中的内容，包括图片和表格进行了格式化处理并输出。**
 
 ---
 
@@ -676,7 +502,7 @@ vision_figure_parser_figure_data_wrapper 将包含图片信息的对象数组转
 )
 ```
 
-**VisionFigureParser 类**
+### VisionFigureParser 类
 
 ```python
  def __init__(self, vision_model, figures_data, *args, **kwargs):
@@ -695,11 +521,11 @@ def __call__(self, **kwargs):
 
 类 **VisionFigureParser** 中有以下函数：
 
-**_extract_figures_info：**数据提取**。**将转换后的输入数据 figures_data 中的信息提取到 ****figures（原始图片信息），descriptions（图片描述信息），positions （位置信息）三个数组中。
+**_extract_figures_info**：数据提取。将转换后的输入数据 figures_data 中的信息提取到 figures（原始图片信息），descriptions（图片描述信息），positions （位置信息）三个数组中。
 
 **_assemble**：数据格式转换。将数据转换成输入数据 figures_data 格式。
 
-**__call__**：主方法，使用 vision 模型将图像转换成描述文本，与原描述文本合并后输出。
+**\_\_call__**：使用 vision 模型将图像转换成描述文本，与原描述文本合并后输出。
 
 ---
 
@@ -711,7 +537,7 @@ res = tokenize_table(tables, doc, is_english)
 
 对于表格内容进行分词处理。
 
-**tokenize_table 函数**
+### tokenize_table —— 表格分词
 
 ```python
 if isinstance(rows, str):
@@ -776,7 +602,7 @@ chunks, images = naive_merge_docx(
         "delimiter", "\n!?。；！？"))
 ```
 
-**naive_merge_docx 函数**
+### naive_merge_docx —— chunk 处理
 
 ```python
  cks = [""]
