@@ -1,7 +1,7 @@
 baseURL = "https://your-domain.com/"
 languageCode = "zh-cn"
-title = "原华的技术博客"
-theme = "hugo-blog-awesome"
+name = "硅基突触"
+description = "一个专注于人工智能技术深度解析的博客。从神经网络的内在机制到Prompt工程的精妙艺术，我们追踪AI技术的每一个进化节点，分享实用技巧与前沿思考。"
 
 # ✅ 替换 paginate
 [pagination]
