@@ -1,8 +1,8 @@
 ---
 title: "【解密源码】 RAGFlow 切分最佳实践-navie 分词器原理"
 date: 2025-10-17T10:39:10+08:00
-draft: true
-tags: ["源码","技术",RAG]
+draft: false
+tags: ["源码","技术","RAG"]
 categories: ["RAGFlow"]
 ---
 
