@@ -46,11 +46,11 @@ class Pdf(PdfParser):
 ### PdfParser 基类
 PdfParser() 实例化实现了以下功能：
 
-**\_\_images__**：
+**\_\_images__**： pdf 文档的数字化转换，将静态的 pdf 页面转换为可结构化数据，为后续的布局分析、表格提取等高级处理奠定基础。
 
-**_layouts_rec**：
+**_layouts_rec**：结合上一步获取的内容页图像和 OCR 识别的文本框信息，进行文档每页的布局分析，和坐标重建。
 
-**_table_transformer_job**：
+**_table_transformer_job**：表格处理系统，根据布局分析得到的表格类型，对其表格数据内容进行提取处理。
 
 **_text_merge**：基于规则合并文本，解决 OCR 识别中文本碎片化问题。
 
@@ -58,9 +58,9 @@ PdfParser() 实例化实现了以下功能：
 
 **_filter_forpages**：检测并过滤掉文档中的非正文内容页面，如目录页、致谢页等，提高后续处理的文本质量。
 
-**_extract_table_figure**：
+**_extract_table_figure**：提取表格，图片内容输出。针对表格的提取，进行了跨页合并，图像截取操作。
 
-**__filterout_scraps**：
+**__filterout_scraps**：与 `_text_merge` 功能类似，再次处理 OCR 识别碎片化文本，基于规则将碎片化文本进行组装还原。
 ``` python
 def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
     self.__images__(fnm, zoomin)
@@ -377,4 +377,244 @@ if page_dirty:  # 如果存在脏页
 ```
 
 #### _extract_table_figure
-提取文档图像，表格内容图像，关联相应标题
+1. 提取文档图像，表格内容图像，并规划合并方案。
+```python
+tables = {}
+figures = {}
+# extract figure and table boxes
+i = 0
+lst_lout_no = "" # 记录上一个处理的布局标识符
+nomerge_lout_no = [] # 不合并的布局列表
+while i < len(self.boxes):
+    if "layoutno" not in self.boxes[i]:
+        i += 1
+        continue
+    # 生成当前文本框的布局标识符： "页码-布局号"
+    lout_no = str(self.boxes[i]["page_number"]) + "-" + str(self.boxes[i]["layoutno"])
+    # 检查当前文本框是否是标题类内容
+    if TableStructureRecognizer.is_caption(self.boxes[i]) or self.boxes[i]["layout_type"] in ["table caption", "title", "figure caption", "reference"]:
+        # 关键：将前一个布局标识符加入不合并列表
+        nomerge_lout_no.append(lst_lout_no)
+    if self.boxes[i]["layout_type"] == "table":
+        if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
+            self.boxes.pop(i)
+            continue
+        if lout_no not in tables:
+            tables[lout_no] = []
+        tables[lout_no].append(self.boxes[i])
+        self.boxes.pop(i)
+        lst_lout_no = lout_no
+        continue
+    if need_image and self.boxes[i]["layout_type"] == "figure":
+        if re.match(r"(数据|资料|图表)*来源[:： ]", self.boxes[i]["text"]):
+            self.boxes.pop(i)
+            continue
+        if lout_no not in figures:
+            figures[lout_no] = []
+        figures[lout_no].append(self.boxes[i])
+        self.boxes.pop(i)
+        lst_lout_no = lout_no
+        continue
+    i += 1
+```
+这里针对跨页表格合并的场景有一个十分精妙的设计，`nomerge_lout_no` 记录上一个布局内容，表示不需要与下一个布局内容进行合并。
+```
+场景1: 表格+标题的正常情况
+页面内容顺序：
+[表格内容] → [表格标题] → [下一个表格内容]
+
+处理过程：
+1. 处理表格内容：lout_no = "1-0", lst_lout_no = "1-0"
+2. 遇到表格标题：检测为caption → 将前一个lst_lout_no("1-0")加入nomerge_lout_no
+3. 继续处理...
+
+结果：
+表格"1-0"被标记为不合并，防止与后续内容错误合并。
+-----------------------------------------------------------------------------------------
+场景2: 跨页表格
+第1页: [表格部分A] → [表格标题]
+第2页: [表格部分B]
+
+处理过程：
+第1页：
+1. 处理表格A：lout_no = "1-0", lst_lout_no = "1-0"  
+2. 遇到标题：标记"1-0"为不合并
+
+第2页：
+1. 处理表格B：lout_no = "2-0", lst_lout_no = "2-0"
+2. 跨页合并检查时："1-0"在nomerge_lout_no中 → 跳过合并
+
+结果：
+防止了表格A（带标题）与表格B错误合并。
+-----------------------------------------------------------------------------------------
+场景3: 图形标题的处理
+页面内容：
+[图形内容] → [图形标题] → [正文文本]
+
+处理过程：
+1. 处理图形：lout_no = "1-1", lst_lout_no = "1-1"
+2. 遇到图形标题：标记"1-1"为不合并
+3. 后续正文不会被错误合并到图形区域
+```
+2. 跨页合并
+针对三种情况不进行合并：标记为不合并，同页不合并，跨多页不合并，垂直距离检查大于23倍字符高度不合并（这可能是经过大量实验分析得出的最优经验值）
+```python
+nomerge_lout_no = set(nomerge_lout_no)
+tbls = sorted([(k, bxs) for k, bxs in tables.items()], key=lambda x: (x[1][0]["top"], x[1][0]["x0"]))
+
+i = len(tbls) - 1
+while i - 1 >= 0:
+    k0, bxs0 = tbls[i - 1]
+    k, bxs = tbls[i]
+    i -= 1
+    if k0 in nomerge_lout_no:
+        continue
+    if bxs[0]["page_number"] == bxs0[0]["page_number"]:
+        continue
+    if bxs[0]["page_number"] - bxs0[0]["page_number"] > 1:
+        continue
+    mh = self.mean_height[bxs[0]["page_number"] - 1]
+    if self._y_dis(bxs0[-1], bxs[0]) > mh * 23:
+        continue
+    tables[k0].extend(tables[k])
+    del tables[k]
+```
+3. 标题检测和关联
+
+标题坐标检测
+```python
+c = self.boxes[i]
+def nearest(tbls):
+mink = ""; minv = 1000000000
+for k, bxs in tbls.items():
+    for b in bxs:
+        if b.get("layout_type", "").find("caption") >= 0: continue
+        y_dis = self._y_dis(c, b)  # 垂直距离
+        x_dis = self._x_dis(c, b) if not x_overlapped(c, b) else 0  # 水平距离
+        dis = y_dis * y_dis + x_dis * x_dis  # 欧氏距离平方
+        if dis < minv:
+            mink = k; minv = dis
+return mink, minv
+```
+标题关联
+```python
+if tv < fv and tk:
+    tables[tk].insert(0, c)
+    logging.debug("TABLE:" + self.boxes[i]["text"] + "; Cap: " + tk)
+elif fk:
+    figures[fk].insert(0, c)
+    logging.debug("FIGURE:" + self.boxes[i]["text"] + "; Cap: " + tk)
+```
+
+4. 对图像内容进行裁剪处理
+```python
+if separate_tables_figures:
+    figure_results.append((cropout(bxs, "figure", poss), [txt]))
+    figure_positions.append(poss)
+else:
+    res.append((cropout(bxs, "figure", poss), [txt]))
+    positions.append(poss)
+```
+5. 对表格内容进行图像裁剪处理
+```python
+res.append((cropout(bxs, "table", poss), 
+               self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
+```
+6. 最终结果组装返回
+```python
+if separate_tables_figures:
+    assert len(positions) + len(figure_positions) == len(res) + len(figure_results)
+    if need_position:
+        return list(zip(res, positions)), list(zip(figure_results, figure_positions))
+    else:
+        return res, figure_results
+else:
+    assert len(positions) == len(res)
+    if need_position:
+        return list(zip(res, positions))
+    else:
+        return res
+```
+> *Tips：已经对表格内容进行过文本提取，为什么还需要进行图像截取*
+
+> "文本+图像"的双重提取策略确保了文档处理系统既能够理解内容，又能够保留形式，满足了真实业务场景中的多样化需求。
+>1. 在 pdf 文档提取中 OCR 识别是有误差的，图像是作为校验和保底方案。
+>2. 表格中的排版信息只通过文本会丢失很多视觉信息；有很多复杂表格是无法只用文本描述的。
+>3. 在特殊场景，如法律，审计等，是要求原始视觉档案。
+>4. 可以结合多模态进一步校准信息。
+
+### Pdf 类
+Pdf 类作为入口点，提供简单的接口来调用 PdfParser 基类中整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，并对解析后的文档最后通过规则进行多栏排版识别，垂直文档排序，跨页文本合并等操作。主要在 `_naive_vertical_merge` 函数中实现，这里可以简单看以下两个设计点：
+1. 多栏布局排版识别，重排序
+```python
+# 计算典型列宽
+column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
+if not column_width or math.isnan(column_width):
+    column_width = self.mean_width[0]  # 备用方案
+
+# 推断页面列数
+self.column_num = int(self.page_images[0].size[0] / zoomin / column_width)
+if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
+    logging.info("Multi-column................... {} {}".format(column_width, self.page_images[0].size[0] / zoomin / self.column_num))
+    # 多栏文档：按X坐标重新排序
+    self.boxes = self.sort_X_by_page(self.boxes, column_width / self.column_num)
+```
+
+2. 合并规则
+```python
+# 合并规则
+concatting_feats = [
+    b["text"].strip()[-1] in ",;:'\"，、‘“；：-",                    # 以连接符号结尾
+    len(b["text"].strip()) > 1 and b["text"].strip()[-2] in ",;:'\"，‘“、；：",  # 倒数第二个字符是连接符
+    b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",  # 以下一句符号开头
+]
+# 不合并规则
+feats = [
+    b.get("layoutno", 0) != b_.get("layoutno", 0),  # 不同布局区域
+    b["text"].strip()[-1] in "。？！?",              # 以句子结束符结尾
+    self.is_english and b["text"].strip()[-1] in ".!?",  # 英文句子结束
+    b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,  # 垂直间距过大
+    b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,  # 跨页水平错位
+]
+```
+
+通过 `pdf_parser = Pdf()` 解析后的 `sections, tables, figures` 按照与 docx 文档相同的处理流程，先通过视觉模型（Vision Model） 识别图片内容，后进行分词器 `tokenize_table` 处理后期望输出的数据结构。这两个功能具体实现可参考上一章《naive Parser 语义切块（docx 篇）》最后部分。
+
+## 3. Plain Text 布局识别器
+如果不采用 DeepDOC，而是指定的是 Plain Text 布局识别器。
+
+解析器初始化
+``` python
+if layout_recognizer == "Plain Text":
+    pdf_parser = PlainParser()
+```
+
+`PlainParser()` 只是基于`pypdf` 库与 DFS 算法实现的极简的PDF文本提取方案，只提取原始文本内容，不进行复杂的OCR、布局分析或图像处理。这部分实现与 DeepDOC 布局识别器中 `__images__` 方法中使用 `pypdf` 库部分实现的功能相同。
+
+## 4. 视觉模型布局识别器
+若没有指定任何布局识别器，则会采用视觉模型（Vision Model）对 pdf 页面图像进行识别并生成文本描述。
+```python
+vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=layout_recognizer, lang=lang)
+pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
+```
+
+VisionParser 中包含两个重要步骤：
+
+1. 使用 `pdfplumber` 库将 pdf 文档转换成图像
+```python
+self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
+```
+2. 使用视觉大模型识别图像生成文本
+```python
+ text = picture_vision_llm_chunk(
+    binary=img_binary,
+    vision_model=self.vision_model,
+    prompt=vision_llm_describe_prompt(page=pdf_page_num + 1),
+    callback=callback,
+)
+```
+
+# 下期预告
+在本期《【解密源码】RAGFlow 切分最佳实践- naive Parser 语义切块（pdf 篇）》中，我们深入剖析了 .pdf 文档在 RAGFlow 中的完整解析流水线，看到了 RAGFlow 如何将结构丰富的 .pdf 文档转化为高质量的语义块，为后续的向量化和检索奠定坚实基础。
+
+在下一期中，我们将深入剖析 Naive Parser 下 .csv|xlsx 文件的语义切块方案。
