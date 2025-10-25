@@ -2,7 +2,8 @@
 title: "【解密源码】 RAGFlow 切分最佳实践- naive Parser 语义切块（pdf 篇）"
 date: 2025-10-18T10:39:10+08:00
 draft: true
-tags: ["源码","技术",RAG]
+tags: ["源码","技术","RAG
+"]
 categories: ["RAGFlow"]
 ---
 # 引言
@@ -656,7 +657,63 @@ self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(Byt
 )
 ```
 
+## sections 后处理
+
+经过上述一系列处理得到 sections，针对有图和无图 sections 两种场景，分别对 sections 进行后处理输出。有图 sections 处理逻辑只有在处理 markdown 文档时才用到，在拆解 markdown 介绍，这里来看卡“无图”文档处理逻辑。
+```python
+if section_images:
+   # 有图文档处理
+else:
+   # 无图文档处理
+```
+> *注意：这里的有图和无图 sections 不是指整个文档中是否包含图片，而是指 sections 中是否包含图片信息，也可以理解为图片是否额外解析出来存储在单独的变量中。*
+
+> *docx, pdf 文档解析器输出的结构体（sections）中已经包含了文本和图片的信息，在这个判断中被认为无图（section_images==False）*
+
+>*markdown 解析器会单独解析出文档中的图片存储在 section_images 变量中，还需要将文本与图片进行对应关联，在这个判断中被认为有图（section_images==True）*
+
+### 无图
+```python
+chunks = naive_merge(
+    sections, int(parser_config.get(
+        "chunk_token_num", 128)), parser_config.get(
+        "delimiter", "\n!?。；！？"))
+if kwargs.get("section_only", False):
+    return chunks
+
+res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+```
+
+#### naive_merge
+根据传入的 chunk size 和分隔符，将文本进行规则切分后输出。与 docx 文档的**合并切块**处理逻辑类似。
+#### tokenize_chunks
+返回统一格式的结构化文档块，作为后续向量化输入。
+- 非 pdf 文档处理，添加位置信息后经过分词器处理输出；
+- pdf 文档处理，会经过 `pdf_parser.crop(ck, need_position=True)` 处理，它是根据文本在 PDF 中的位置，将对应区域裁剪成图片（可多页），并可选返回坐标信息。处理后添加位置信息后经过分词器处理输出。
+```python
+def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
+    res = []
+    # wrap up as es documents
+    for ii, ck in enumerate(chunks):
+        if len(ck.strip()) == 0:
+            continue
+        logging.debug("-- {}".format(ck))
+        d = copy.deepcopy(doc)
+        if pdf_parser:
+            try:
+                d["image"], poss = pdf_parser.crop(ck, need_position=True)
+                add_positions(d, poss)
+                ck = pdf_parser.remove_tag(ck)
+            except NotImplementedError:
+                pass
+        else:
+            add_positions(d, [[ii]*5])
+        tokenize(d, ck, eng)
+        res.append(d)
+    return res
+``` 
+
 # 下期预告
 在本期《【解密源码】RAGFlow 切分最佳实践- naive Parser 语义切块（pdf 篇）》中，我们深入剖析了 .pdf 文档在 RAGFlow 中的完整解析流水线，看到了 RAGFlow 如何将结构丰富的 .pdf 文档转化为高质量的语义块，为后续的向量化和检索奠定坚实基础。
 
-在下一期中，我们将深入剖析 Naive Parser 下 .csv|xlsx 文件的语义切块方案。
+在下一期中，我们将深入剖析 Naive Parser 下 .csv|xlsx 文件和 txt 文件以及各种代码文件的语义切块方案。
