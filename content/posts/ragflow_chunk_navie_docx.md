@@ -1,5 +1,5 @@
 ---
-title: "【解密源码】 RAGFlow 切分最佳实践- naive Parser 语义切块（docx 篇）"
+title: "【解密源码】 RAGFlow 切分最佳实践- naive parser 语义切块（docx 篇）"
 date: 2025-10-18T10:39:10+08:00
 draft: false
 tags: ["源码","技术","RAG"]
@@ -516,6 +516,6 @@ return res # 整个 .docx 文档解析的输出
 ```
 
 # 下期预告
-在本期《【解密源码】RAGFlow 切分最佳实践- naive Parser 语义切块（docx 篇）》中，我们深入剖析了 .docx 文档在 RAGFlow 中的完整解析流水线，看到了 RAGFlow 如何将结构丰富的 .docx 文档转化为高质量的语义块，为后续的向量化和检索奠定坚实基础。
+在本期《【解密源码】RAGFlow 切分最佳实践- naive parser 语义切块（docx 篇）》中，我们深入剖析了 .docx 文档在 RAGFlow 中的完整解析流水线，看到了 RAGFlow 如何将结构丰富的 .docx 文档转化为高质量的语义块，为后续的向量化和检索奠定坚实基础。
 
-在下一期中，我们将深入剖析 Naive Parser 下 .pdf 文件的语义切块方案。
+在下一期中，我们将深入剖析 naive parser 下 .pdf 文件的语义切块方案。
