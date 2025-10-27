@@ -1,6 +1,6 @@
 ---
-title: "【解密源码】 RAGFlow 切分最佳实践- naive parser 语义切块（html 篇）"
-date: 2025-10-26T11:10:00+08:00
+title: "【解密源码】 RAGFlow 切分最佳实践- naive parser 语义切块（html & json & doc 篇）"
+date: 2025-10-27T10:15:00+08:00
 draft: false
 tags: ["源码","技术","RAG"]
 categories: ["RAGFlow"]
@@ -265,3 +265,30 @@ def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
 ```
 
 HTML，JSON，DOC 文档经过切分得到 sections 后，还需要进行 sections 后处理，这部分可参考《naive parser 语义切块（pdf 篇）》中 **sections 后处理模块中的无图 sections 处理逻辑**，经过后处理后得到最终输出的 res。
+
+# 下期预告
+在本期《【解密源码】 RAGFlow 切分最佳实践- naive parser 语义切块（html & json & doc 篇）》中，我们深入剖析了 html|json|doc 文档 RAGFlow 中的完整解析流水线，相较于之前的文档类型的解析方案，因为天生具有结构化信息，这几种文档的解析方案更加简单高效。
+
+至此，naive 模式下所有文档格式的解析方案已经全部拆解完毕，一共是以下 8 中文档类型。
+```python
+if re.search(r"\.docx$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.pdf$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
+		...
+elif re.search(r"\.doc$", filename, re.IGNORECASE):
+		...
+else:
+	  raise NotImplementedError(
+	      "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
+```
+撒花ing🎉🎉🎉
