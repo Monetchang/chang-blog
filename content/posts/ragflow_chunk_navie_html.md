@@ -7,8 +7,39 @@ categories: ["RAGFlow"]
 ---
 
 # 引言
+在 RAGFlow 的多文档解析体系中，HTML、JSON 与 DOC 三类文档具有天然的结构化特性。  
+相较于 PDF、Markdown 等复杂输入，它们的语义边界更清晰、噪声更少、解析路径更短。  
 
+- **HTML** 文件具备强标记性，可通过 DOM 递归解析层次结构；  
+- **JSON / JSONL** 文件本身就是结构化数据，适合直接切分为层级化的 chunks；  
+- **DOC** 则属于遗留格式，通过 Tika 提取文本仍然具有较高兼容性。  
+
+RAGFlow 在设计 naive parser 的过程中，为这三类结构化文档定制了不同的解析策略：  
+HTML 以标签为核心进行语义分层；JSON 则以路径遍历实现“语义块切分”；DOC 使用通用解析器快速提取文本内容。  
+这些策略共同组成了 RAGFlow 的“轻结构化解析引擎”，让模型能高效吸收人类知识的不同表现形式。
 # 省流版
+RAGFlow 对 HTML、JSON、DOC 三类文档采用了“轻结构化解析 + 动态切块”策略，实现高效语义块抽取。
+#### HTML 文档
+   - 使用 BeautifulSoup 递归解析 DOM 树，删除冗余节点（style/script/comment）；  
+   - 为 block 元素生成唯一 block_id，保留表格与标题结构；  
+   - 将标题转 Markdown 语法（如 `<h1>` → `#`），再按 token 数切块。 
+   
+**设计亮点**
+- **块级 ID 与标题保留机制**：为 HTML 每个语义块生成 `block_id`，并保留标题等级信息，确保切块后仍能重构原文逻辑。
+
+#### JSON 文档
+   - 自动识别 JSON / JSONL 格式；  
+   - 通过 `_list_to_dict_preprocessing` 将嵌套 list 转换为可遍历 dict；  
+   - 根据 `max_chunk_size` / `min_chunk_size` 动态生成层级化 chunk。
+
+**设计亮点**
+- **深度优先遍历前置处理 JSON 结构**：将 JSON 中 value 是列表和字典的复杂场景转换成统一结构，为后续统一处理做基础。
+
+#### DOC 文档
+   - 调用 Apache Tika 提取文本内容；  
+   - 按换行符快速切分，形成最小语义单元。  
+
+
 
 # 手撕版
 
