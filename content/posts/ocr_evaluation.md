@@ -29,7 +29,6 @@ paddleocr doc_parser -i ./paddleocr_vl_demo.png --use_layout_detection False
 ```
 更多功能使用参见官方文档 https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html
 
-
 ## DeepSeek-OCR
 
 属于视觉语言模型（VLM）范畴，不仅识别，还能基于 prompt 输出总结、翻译、问答等。
@@ -174,7 +173,7 @@ ISN7[[338, 841, 388, 856]]
 0041957/1·3183[[414, 841, 565, 856]]
 定价：32.00元[[399, 861, 504, 879]]
 ```
-**对于较为模糊的 pdf 扫描文档，两个模型都能够很好的识别提取**
+**对于较为模糊的 pdf 扫描文档，两个模型都能够很好的识别提取。**
 
 ## 复杂表格
 ![示例](../../static/images/pdf_table.jpg)
@@ -240,7 +239,7 @@ Table 2: The Transformer achieves better BLEU scores than previous state-of-the-
 | Transformer (base model)        | 27.3  | 3.3 * 10^18           |
 | Transformer (big)               | 28.4  | 2.3 * 10^19           |
 ```
-**PaddleOCR-VL 很好的识别并还原了表格信息；DeepSeek-OCR 使用不同 prompt 都能完成表格内容的识别，但都不够准确，使用`Free OCR`识别出的结果缺少了 BLEU 下 EN-FR 和 Training Cost (FLOPs) 下 EN-DE 的信息，`Parse the figure`识别的结果将 EN-DE 识别成了 EN-FR**
+**PaddleOCR-VL 很好的识别并还原了表格信息；DeepSeek-OCR 使用不同 prompt 都能完成表格内容的识别，但都不够准确，使用`Free OCR`识别出的结果缺少了 BLEU 下 EN-FR 和 Training Cost (FLOPs) 下 EN-DE 的信息，`Parse the figure`识别的结果将 EN-DE 识别成了 EN-FR。**
 ## 模糊表格
 ![示例](../../static/images/table.jpg)
 #### DeepSeek-OCR
@@ -513,10 +512,11 @@ Figure1:TheTransformer-modelarchitecture.[[279, 950, 682, 974]]
 ```
 **PaddleOCR-VL对于图片的识别处理依然很乏力，而 DeepSeek-OCR 对于图片中文字能够很好的识别提取图片中的文字。**
 
-从上方所有场景的测评来看，除了对图片的处理，PaddleOCR-VL 在各场景下识别的准确率全面领先 DeepSeek-OCR，那么 DeepSeek-OCR 真的是徒有虚名吗？
+从上面的多场景测评结果来看，除了图片类内容外，PaddleOCR-VL 在识别精度上全面领先 DeepSeek-OCR。
 
-并不是，DeepSeek-OCR 其实可以看作打着 OCR 名号的 VLM，它的优势不在于识别，而在于理解。在解释模式下，以上所有场景能够非常好完成识别-理解的全部流程并输出。甚至在解释模式下，大部分场景的识别准确率高于文字模式。
+但这并不意味着 DeepSeek-OCR “名不副实”——恰恰相反，它的定位与传统 OCR 完全不同。DeepSeek-OCR 更像是一款披着 OCR 外衣的 VLM（视觉语言模型）：它的强项不在“识别”，而在“理解”。
 
+当 prompt 是 `Describe this image in detail` 时，它不仅能完成识别，还能连同语义理解一起输出，形成完整的“读懂图片”流程，甚至在某些场景中识别效果反而优于纯文字模式。
 ## 复杂表格
 
 The figure presents a table comparing the performance of different models in terms of BLEU scores and training costs for English-to-German and English-to-French translations. The table is titled "Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the English-to-German and English-to-French newstest2014 tests at a fraction of the training cost."
