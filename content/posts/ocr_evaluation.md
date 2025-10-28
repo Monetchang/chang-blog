@@ -56,9 +56,9 @@ general: <image>\nDescribe this image in detail.
 # 测评场景
 
 ## 常见 PDF 文档
-![示例](../../static/images/pdf_com.jpg)
+![示例](/images/pdf_com.jpg)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/pdf_com_bd.jpg)
+![BD识别结果](/images/pdf_com_bd.jpg)
 文档提取
 ```
 ### 6.1 Machine Translation
@@ -72,7 +72,7 @@ For the base models, we used a single model obtained by averaging the last 5 che
 Table 2 summarizes our results and compares our translation quality and training costs to other model architectures from the literature. We estimate the number of floating point operations used to train a model by multiplying the training time, the number of GPUs used, and an estimate of the sustained single-precision floating-point capacity of each GPU $ ^{5} $ .
 ```
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/pdf_com_ds.jpg)
+![DS识别结果](/images/pdf_com_ds.jpg)
 
 文档提取
 ```
@@ -99,10 +99,10 @@ single-precision floating-point capacity of each GPU 5.[[35, 944, 535, 986]]
 ```
 **显然 DeepSeek-OCR 没有很好的识别处理行内公式。**
 ## 模糊 PDF 文档
-![示例](../../static/images/pdf_dim.jpg)
+![示例](/images/pdf_dim.jpg)
 
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/pdf_dim_bd.jpg)
+![BD识别结果](/images/pdf_dim_bd.jpg)
 ```
 图书在版编目(CIP)数据
 
@@ -145,7 +145,7 @@ ISBN 7 02 004195 7/1·3183
 定价：32.00元
 ```
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/pdf_dim_ds.jpg)
+![DS识别结果](/images/pdf_dim_ds.jpg)
 ```
 （京）新登字002号[[33, 50, 226, 68]]
 图书在版编目（CIP）数据[[202, 220, 425, 238]]
@@ -176,10 +176,10 @@ ISN7[[338, 841, 388, 856]]
 **对于较为模糊的 pdf 扫描文档，两个模型都能够很好的识别提取。**
 
 ## 复杂表格
-![示例](../../static/images/pdf_table.jpg)
+![示例](/images/pdf_table.jpg)
 
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/pdf_table_bd.jpg)
+![BD识别结果](/images/pdf_table_bd.jpg)
 文档提取
 ```
 Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the English-to-German and English-to-French newstest2014 tests at a fraction of the training cost.​
@@ -241,9 +241,9 @@ Table 2: The Transformer achieves better BLEU scores than previous state-of-the-
 ```
 **PaddleOCR-VL 很好的识别并还原了表格信息；DeepSeek-OCR 使用不同 prompt 都能完成表格内容的识别，但都不够准确，使用`Free OCR`识别出的结果缺少了 BLEU 下 EN-FR 和 Training Cost (FLOPs) 下 EN-DE 的信息，`Parse the figure`识别的结果将 EN-DE 识别成了 EN-FR。**
 ## 模糊表格
-![示例](../../static/images/table.jpg)
+![示例](/images/table.jpg)
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/table_ds.jpg)
+![DS识别结果](/images/table_ds.jpg)
 文档提取
 ```
 出填关别[[328, 161, 384, 187]]
@@ -316,9 +316,9 @@ FOB[[566, 409, 592, 432]]
 ```
 **PaddleOCR-VL对此直接罢工报错，DeepSeek-OCR使用 OCR Free 也未能成功提取到表格格式和文字，只能使用存文字提取模式和描述模式。**
 ## 数学公式1
-![示例](../../static/images/math.png)
+![示例](/images/math.png)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/math_bd.png)
+![BD识别结果](/images/math_bd.png)
 文档提取
 ```
 题目：设有一个随机变量 X 服从均值为  $ \mu $  和方差为  $ \sigma^{2} $  的正态分布  $ N(\mu, \sigma^{2}) $ 。考虑二维随机变量  $ (X, Y) $ ，其中  $ Y = aX + b $ ， $ a \neq 0 $ ，b 为常数。请完成以下任务：
@@ -362,7 +362,7 @@ FOB[[566, 409, 592, 432]]
 以上是本题的解答。
 ```
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/math_ds.jpg)
+![DS识别结果](/images/math_ds.jpg)
 文档提取
 ```
 题目：设有一个随机变量X服从均值为μ和方差为o²的正态分布N(μ,o²)。考虑二维随机变量（X，Y)，[[164, 60, 822, 90]]
@@ -394,9 +394,9 @@ o²+oy[[524, 820, 584, 846]]
 **显然 DeepSeek-OCR 对于专业数学符号的提取处理远不如 PaddleOCR-VL，例如：将 rho 识别成了 p，将 sigma 识别成了 o。**
 
 ## 数学公式2
-![示例](../../static/images/pdf_math.jpg)
+![示例](/images/pdf_math.jpg)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/pdf_math_bd.jpg)
+![BD识别结果](/images/pdf_math_bd.jpg)
 文档提取
 ```
 ### 5.3 Optimizer
@@ -408,7 +408,7 @@ We used the Adam optimizer [20] with  $ \beta_{1}=0.9 $ ,  $ \beta_{2}=0.98 $  a
 This corresponds to increasing the learning rate linearly for the first  $ warmup\_steps $  training steps, and decreasing it thereafter proportionally to the inverse square root of the step number. We used  $ warmup\_steps = 4000 $ .
 ```
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/pdf_math_ds.jpg)
+![DS识别结果](/images/pdf_math_ds.jpg)
 文档提取
 ```
 5.3Optimizer[[30, 52, 186, 123]]
@@ -421,9 +421,9 @@ warmup_steps = 4000.[[30, 816, 264, 895]]
 ```
 **DeepSeek-OCR 的识别直接无视了公式**
 ## 手写体1
-![示例](../../static/images/handwriter.jpg)
+![示例](/images/handwriter.jpg)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/handwriter_bd.jpg)
+![BD识别结果](/images/handwriter_bd.jpg)
 文档提取
 ```
 公安部正在修改户籍改革文件报国务院审批，目前已启动对户口法的立法调研。这是公安部办公厅副主任、新闻发言人武和平19日在公安部召开的新闻发布会上透露的。
@@ -445,9 +445,9 @@ warmup_steps = 4000.[[30, 816, 264, 895]]
 ```
 **对于手写体中划去的文字（户口~~制度~~登记制度），DeepSeek-OCR 并没有识别到进行处理。**
 ## 手写体2
-![示例](../../static/images/handwriter_2.jpg)
+![示例](/images/handwriter_2.jpg)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/handwriter_2_bd.jpg)
+![BD识别结果](/images/handwriter_2_bd.jpg)
 文档提取
 ```
 床前明月光， 疑是地上霜。 举头望明月， 低头思故乡。
@@ -463,16 +463,16 @@ warmup_steps = 4000.[[30, 816, 264, 895]]
 **DeepSeek-OCR 对于较为潦草的中文手写体，识别效果并不理想。**
 
 ## 图片
-![示例](../../static/images/graph.jpg)
+![示例](/images/graph.jpg)
 #### PaddleOCR-VL
-![BD识别结果](../../static/images/graph_bd.jpg)
+![BD识别结果](/images/graph_bd.jpg)
 文档提取
 ```
 <div style="text-align: center;"><img src="imgs/img_in_image_box_160_55_451_488.jpg" alt="Image" width="45%" /></div>
 <div style="text-align: center;">Figure 1: The Transformer - model architecture.</div>
 ```
 #### DeepSeek-OCR
-![DS识别结果](../../static/images/graph_ds.jpg)
+![DS识别结果](/images/graph_ds.jpg)
 文档提取
 ```
 Output[[535, 103, 592, 128]]
