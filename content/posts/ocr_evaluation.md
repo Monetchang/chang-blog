@@ -38,5 +38,5 @@ PROMPT = '<image>\nParse the figure.'
 # 测评场景
 
 ## 常见 PDF 文档
-![图片示例](./images/e_trans.jpg)
+![图片示例](/images/e_trans.jpg)
 
