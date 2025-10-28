@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek 与 PaddleOCR-VL 常见场景下能力横评"
+title: "为什么你的 DeepSeek-OCR 不好用？DeepSeek 与 PaddleOCR-VL 全面测评"
 date: 2025-10-28T10:39:10+08:00
 draft: false
 tags: ["技术","VLM","OCR"]
@@ -12,29 +12,47 @@ OCR 不再只是识字。随着多模态大模型的发展，新一代的 OCR �
 # 模型简介
 ## PaddleOCR-VL
 
-来自百度 PaddleOCR 团队，属于传统 OCR 扩展，支持文档版式分析（layout）、表格结构提取等
+来自百度 PaddleOCR 团队，属于传统 OCR 扩展，支持文档版式分析（layout）、表格结构提取等。
 
-### 安装
+### 功能简介
+```python
+paddleocr doc_parser -i https://paddle-model-ecology.bj.bcebos.com/paddlex/imgs/demo_image/paddleocr_vl_demo.png
 
-### 功能
+# 通过 --use_doc_orientation_classify 指定是否使用文档方向分类模型
+paddleocr doc_parser -i ./paddleocr_vl_demo.png --use_doc_orientation_classify True
+
+# 通过 --use_doc_unwarping 指定是否使用文本图像矫正模块
+paddleocr doc_parser -i ./paddleocr_vl_demo.png --use_doc_unwarping True
+
+# 通过 --use_layout_detection 指定是否使用版面区域检测排序模块
+paddleocr doc_parser -i ./paddleocr_vl_demo.png --use_layout_detection False
+```
+更多功能使用参见官方文档 https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html
 
 
 ## DeepSeek-OCR
 
-属于视觉语言模型（VLM）范畴，不仅识别，还能基于 prompt 输出总结、翻译、问答等
+属于视觉语言模型（VLM）范畴，不仅识别，还能基于 prompt 输出总结、翻译、问答等。
 
-### 安装
-
-### 功能
-DeepSeek-OCR 使用不同的 prompt 来
+### 功能简介
+DeepSeek-OCR 使用不同的 prompt 来实现不同的功能
 ```python
-# PROMPT = '<image>\nFree OCR'
-PROMPT = '<image>\nParse the figure.'
-# PROMPT='<image>\n<|grounding|>OCR this image.'
-# PROMPT='<image>\nDescribe this image in detail.'
+# 将文档转换成 markdown 格式。
+document: <image>\n<|grounding|>Convert the document to markdown. 
+# 只提取文字，不需要任何格式。
+other image: <image>\n<|grounding|>OCR this image. 
+# 按照原文件内容格式的解析，以 markdown 格式进行输出。
+without layouts: <image>\nFree OCR. 
+ # 按照合理的内容格式解析输出，可能是 markdown 也可能是 html 或其他。
+figures in document: <image>\nParse the figure.
+# 理解并描述这张图片。
+general: <image>\nDescribe this image in detail. 
 ```
+更多功能使用参见官方文档 https://github.com/deepseek-ai/DeepSeek-OCR/tree/main
 
-原理上更多对比可参考《》
+> 在实际测试过程中发现，输出结果不能完全能遵循 prompt 的设计，比如同一个表格，使用 `Free OCR` 和 `Parse the figure` 识别出的信息准确率不同（可参见下文复杂表格一栏），需要用户多实践总结最优方案。
+
+两个模型实现原理上更多对比可参考博客《一图胜千言：DeepSeek、Glyph 与 PaddleOCR-VL 的不同答案》。
 
 # 测评场景
 
@@ -175,6 +193,8 @@ Table 2: The Transformer achieves better BLEU scores than previous state-of-the-
 
 #### DeepSeek-OCR
 使用两种不同的 prompt，得到了两种结果。
+
+**Free OCR**
 ```
 Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the
 English-to-German and English-to-French newstest2014 tests at a fraction of the training cost.
@@ -194,7 +214,7 @@ English-to-German and English-to-French newstest2014 tests at a fraction of the 
 | Transformer (big)               | 28.4  | 2.3 · 10^19           |
 | """                             |       |                       |
 ```
-
+**Parse the figure**
 ```
 Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the English-to-German and English-to-Frenchnewstest2014 tests at a fraction of the training cost.
 
@@ -220,7 +240,7 @@ Table 2: The Transformer achieves better BLEU scores than previous state-of-the-
 | Transformer (base model)        | 27.3  | 3.3 * 10^18           |
 | Transformer (big)               | 28.4  | 2.3 * 10^19           |
 ```
-**不同 prompt**
+**PaddleOCR-VL 很好的识别并还原了表格信息；DeepSeek-OCR 使用不同 prompt 都能完成表格内容的识别，但都不够准确，使用`Free OCR`识别出的结果缺少了 BLEU 下 EN-FR 和 Training Cost (FLOPs) 下 EN-DE 的信息，`Parse the figure`识别的结果将 EN-DE 识别成了 EN-FR**
 ## 模糊表格
 ![示例](../../static/images/table.jpg)
 #### DeepSeek-OCR
@@ -718,5 +738,18 @@ The figure illustrates the concept of warmup steps in the context of optimizing 
 In summary, the figure provides a mathematical explanation of how the learning rate is adjusted during the training process using the Adam optimizer, emphasizing the linear increase followed by a proportional decrease.
 
 # 总结
+从本次横向评测可以看出：
 
+PaddleOCR-VL 依旧是“工业级 OCR”的代表，识别稳定、版面还原准确，尤其在 复杂表格与版式结构 的解析上表现出色，输出格式也更规整（HTML/Markdown 兼容度高）。
+
+DeepSeek-OCR 则代表了下一代“理解型 OCR”，能通过不同 prompt 灵活输出结果（如 markdown、summary、QA 等），在图文内容理解与语义级任务上具有更高潜力，但在纯识别精度上仍略逊一筹。
+
+对开发者而言，两者并非竞争，而是互补：
+
+当需要结构化提取或文本精确还原时，选 PaddleOCR-VL；
+
+当需要语义理解、摘要、翻译等智能任务时，选 DeepSeek-OCR。
+
+未来 OCR 的方向将从「识字」走向「读懂」，而 DeepSeek-OCR 已经在这条路上先行一步。
+如果你正在评估多模态 OCR 的落地方案，本篇的对比结论可以作为参考基准。
 
