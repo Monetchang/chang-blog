@@ -273,4 +273,4 @@ DocumentService.increment_chunk_num(
 return [d["id"] for d, _ in files]
 ```
 # 下期预告
-下期我们将正式走进 RAGFlow 的核心解析器体系，聚焦默认的 Naive Parser。
+下期我们将正式走进 RAGFlow 的核心解析器体系，聚焦最常用的 naive parser。
