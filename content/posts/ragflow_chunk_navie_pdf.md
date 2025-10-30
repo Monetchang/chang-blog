@@ -2,8 +2,7 @@
 title: "【解密源码】 RAGFlow 切分最佳实践- naive parser 语义切块（pdf 篇）"
 date: 2025-10-18T10:39:10+08:00
 draft: true
-tags: ["源码","技术","RAG
-"]
+tags: ["源码","技术","RAG"]
 categories: ["RAGFlow"]
 ---
 # 引言
