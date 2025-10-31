@@ -86,7 +86,7 @@ class Pdf(PdfParser):
 ```
 
 ### PdfParser 基类
-PdfParser() 实例化实现了以下功能：
+PdfParser() 中实现了以下重要功能：
 
 **\_\_images__**： pdf 文档的数字化转换，将静态的 pdf 页面转换为可结构化数据，为后续的布局分析、表格提取等高级处理奠定基础。
 
@@ -103,6 +103,8 @@ PdfParser() 实例化实现了以下功能：
 **_extract_table_figure**：提取表格，图片内容输出。针对表格的提取，进行了跨页合并，图像截取操作。
 
 **__filterout_scraps**：与 `_text_merge` 功能类似，再次处理 OCR 识别碎片化文本，基于规则将碎片化文本进行组装还原。
+
+按照 PdfParser() 实例化方法 /_/_call__ 中的功能来一一拆解功能的实现
 ``` python
 def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
     self.__images__(fnm, zoomin)
@@ -184,7 +186,7 @@ for c in chars:
         
     bxs[ii]["chars"].append(c)       # 将字符加入对应文本框
 ```
-4. 文档重建，使用 pdf 提取文字结合 OCR 检测文本框结构重建文档。
+4. 文档重建，使用 pdfplumber 提取文字结合 OCR 检测文本框结构重建文档。
 ```python
 for b in bxs:
     if not b["chars"]:
@@ -205,7 +207,7 @@ for b in bxs:
             
     del b["chars"]  # 清理临时数据
 ```
-5. OCR 提取文字，pdf 未提取到文字情况下，使用 OCR 方案进行文字识别。
+5. OCR 提取文字重建文档，pdfplumber 未提取到文字情况下，使用 OCR 方案进行文字识别填充重建文档。
 ```python
 texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
 for i in range(len(boxes_to_reg)):
@@ -585,8 +587,97 @@ else:
 >3. 在特殊场景，如法律，审计等，是要求原始视觉档案。
 >4. 可以结合多模态进一步校准信息。
 
+基于对 PdfParser 类的分析，所有功能方法都在处理和丰富 self.boxes 列表，最终输出的 self.boxes 列表中的元素主要包含以下结构化信息：
+1. 基础位置信息
+```python
+{
+    "page_number": 1,           # 元素所在的页码（从1开始）
+    "x0": 100.5,               # 元素左边界X坐标
+    "x1": 300.2,               # 元素右边界X坐标  
+    "top": 50.8,               # 元素上边界Y坐标（相对于文档顶部）
+    "bottom": 70.3,            # 元素下边界Y坐标（相对于文档顶部）
+}
+```
+2. 文本内容
+```python
+{
+    "text": "这是文本内容",      # 元素的文本内容
+    "layout_type": "text",      # 布局类型：text, table, figure, equation等
+}
+```
+3. 布局和结构信息
+```python
+{
+    "layoutno": 0,             # 布局编号，同一布局内的元素有相同编号
+    "col_id": 0,               # 列ID，用于多列布局
+    "in_row": 3,               # 同一行中的元素数量
+}
+```
+4. 表格相关字段（如果是表格元素）
+```python
+{
+    "R": 2,                    # 行索引
+    "R_top": 100.0,            # 行顶部位置
+    "R_bott": 120.0,           # 行底部位置
+    "C": 1,                    # 列索引  
+    "C_left": 150.0,           # 列左边界
+    "C_right": 250.0,          # 列右边界
+    "H": 0,                    # 表头索引
+    "H_top": 80.0,             # 表头顶部
+    "H_bott": 95.0,            # 表头底部
+    "SP": 1,                   # 跨行/跨列标识
+}
+```
+5. 图像和位置标签
+```python
+{
+    "position_tag": "@@1\t100.5\t300.2\t50.8\t70.3##",  # 位置标签，用于图像裁剪
+    "image": <PIL.Image>,       # 对应的图像片段
+    "positions": [              # 详细位置信息数组
+        [1, 100, 300, 50, 70]  # [页码, x0, x1, top, bottom]
+    ]
+}
+```
+
 ### Pdf 类
-Pdf 类作为入口点，提供简单的接口来调用 PdfParser 基类中整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，并对解析后的文档最后通过规则进行多栏排版识别，垂直文档排序，跨页文本合并等操作。主要在 `_naive_vertical_merge` 函数中实现，这里可以简单看以下两个设计点：
+Pdf 类作为入口点，调用 PdfParser 中提供的功能实现整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，并对解析后的文档最后通过规则进行多栏排版识别，垂直文档排序，跨页文本合并等操作。
+
+```python
+def __call__(self, filename, binary=None, from_page=0,
+                 to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
+    # 静态的 pdf 页面转换为可结构化数据 
+    self.__images__(
+        filename if not binary else binary,
+        zoomin,
+        from_page,
+        to_page,
+        callback
+    )
+    # 对文档每页的布局分析，和坐标重建
+    self._layouts_rec(zoomin)
+    # 表格数据内容提取
+    self._table_transformer_job(zoomin)
+    # 基于规则合并文本
+    self._text_merge(zoomin=zoomin)
+    if separate_tables_figures:
+        # 提取表格，图片内容输出
+        tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
+        # 简单文本排序
+        self._concat_downward()
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
+    else:
+        # 提取表格，图片内容输出
+        tbls = self._extract_table_figure(True, zoomin, True, True)
+        # 垂直方向上智能合并相邻的文本框
+        self._naive_vertical_merge()
+        self._concat_downward()
+        # 按照阅读习惯排序
+        self._final_reading_order_merge()
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+```
+
+在 `_naive_vertical_merge` 函数中实现垂直方向上智能合并相邻的文本框功能，可以简单看以下两个设计点：
+
 1. 多栏布局排版识别，重排序
 ```python
 # 计算典型列宽
