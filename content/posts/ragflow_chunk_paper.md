@@ -290,7 +290,7 @@ most_level, levels = title_frequency(bull, sorted_sections)
 ```
 检测出编号样式后，通过 `title_frequency` 确定整个文档最常出现的章节标题层级 `most_level`，作为切分基准；同时也获取整个文档所有标题等级列表 `levels`。
 
-4. 按照 `most_level` 切分基准对内容进行切分，`<= most_level` 的内容会进行统一标记并**与同级内容和上一级内容**进行合并作为一个大 chunk，最后用分词器对大 chunk 进行分词。
+4. 按照 `most_level` 切分基准对内容进行切分，`<= most_level` 的内容会进行统一标记并**与同级内容和上一级内容**进行合并作为一个 chunk。
 ```python
 sec_ids = []
 sid = 0
@@ -309,5 +309,8 @@ for (txt, _), sec_id in zip(sorted_sections, sec_ids):
             continue
     chunks.append(txt)
     last_sid = sec_id
+```
+5. 使用分词器对 chunk 进行分词输出最终结果
+```python
 res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
 ```
