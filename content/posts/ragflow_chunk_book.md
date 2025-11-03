@@ -7,8 +7,17 @@ categories: ["RAGFlow"]
 ---
 
 # 引言
+书籍文件往往篇幅巨大、结构复杂，不同章节、目录、致谢等混杂在同一文档中。RAGFlow 在处理 “book” 类文档时，整合了多种解析器（docx、pdf、txt、html、doc），通过自动识别版面结构、过滤非正文、并结合视觉模型生成图片摘要，实现对长文档的精准切分与高质量抽取。本篇将带你逐步拆解源码，了解 RAGFlow 如何优雅地解析一本“书”。
 
 # 省流版
+
+**核心逻辑**
+
+book 模式 面向长篇书籍类文档（docx/pdf/txt/html/doc），通过对不同文件类型自动选择最优解析策略，融合文本语义分块与视觉摘要，实现高质量内容抽取。其目标是：在保持上下文完整性的同时最大限度地过滤无效内容（如目录、致谢页等），为后续知识检索提供干净、结构化的输入。
+
+**设计亮点**
+- 语义级正文过滤：通过正则与上下文规则剔除目录、致谢等非正文部分；
+- 文本块连续性优化：通过 _naive_vertical_merge 与 _merge_with_same_bullet 修复 OCR 切分断裂、项目符号分裂等问题。
 
 # 手撕版
 书籍的解析支持文件格式为 docx|pdf|txt|html|doc 五种格式。其中官方建议由于一本书篇幅较长，并非所有部分都有用，如果是 PDF 格式，请为每本书设置页码范围，以消除负面影响并节省计算时间。
@@ -165,7 +174,7 @@ class Pdf(PdfParser):
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
                 for b in self.boxes], tbls
 ```
-#### _naive_vertical_merge
+##### _naive_vertical_merge
 其中 _naive_vertical_merge 主要目的是将同一列中垂直方向相邻的文本框进行合并。
 
 先过滤无效文本:
@@ -233,5 +242,51 @@ if (any(feats) and not any(concatting_feats)) or any(detach_feats):
     continue
 ```
 
+##### _merge_with_same_bullet
+将具有相同项目符号的连续文本框合并为一个文本块，保持项目符号列表的结构。
 
+pdf 中可能存在以下项目列表， 一个完整的项目符号列表可能被识别为多个独立的文本框，_merge_with_same_bullet 主要是将同一个项目列表内容进行合并。
+```python
+• 项目一：产品介绍
+• 项目二：技术规格
+• 项目三：价格信息
+```
 
+### 3. 使用视觉模型识别并总结图片摘要
+与 docx 处理一致，需要使用 VLM 对文档中的图片进行摘要总结，并以规定格式输出。
+```python
+tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+```
+
+## TXT
+与 naive 模式下获取 txt 文档方案一致，使用 `get_text`。如果传入的二进制内容，则使用从 rag.nlp 引入的方式自动推断出正确的编码，进行解码；否则直接从文件路径读取文本进行拼接返回。
+```python
+txt = get_text(filename, binary)
+```
+与 docx 文档处理方案一致，获取文本后过滤文本中的非正文内容，例如：目录，致谢等。
+```python
+remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
+```
+
+## HTML
+与 naive 模式下处理 html 文档方案一致，使用 `HtmlParser` 解析器进行文档解析。详细技术实现可参考《naive parser 语义切块（html & json & doc 篇）》
+```python
+sections = HtmlParser()(filename, binary)
+```
+与 docx 文档处理方案一致，获取文本后过滤文本中的非正文内容，例如：目录，致谢等。
+```python
+remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
+```
+
+## doc
+与 naive 模式下处理 doc 文档方案一致，详细技术实现可参考《naive parser 语义切块（html & json & doc 篇）》
+```python
+doc_parsed = parser.from_buffer(binary)
+```
+与 docx 文档处理方案一致，获取文本后过滤文本中的非正文内容，例如：目录，致谢等。
+```python
+remove_contents_table(sections, eng=is_english(
+            random_choices([t for t, _ in sections], k=200)))
+```
