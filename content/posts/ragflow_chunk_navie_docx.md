@@ -377,13 +377,13 @@ except Exception:
 
 # 使用 vision 模型对 sections 信息进行处理
 if vision_model:
-    figures_data = vision_figure_parser_figure_data_wrapper(sections) # 数据格式转换，将 sections 格式转换成后续需要处理的格式
+    figures_data = vision_figure_parser_docx_wrapper(sections) # 数据格式转换，将 sections 格式转换成后续需要处理的格式
     docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
     boosted_figures = docx_vision_parser(callback=callback)
     tables.extend(boosted_figures)
 ```
 
-vision_figure_parser_figure_data_wrapper 将包含图片信息的对象数组转换成 figures_data，如以下格式：
+vision_figure_parser_docx_wrapper 将包含图片信息的对象数组转换成 figures_data，如以下格式：
 
 ```python
 (
