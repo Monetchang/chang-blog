@@ -807,3 +807,41 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
 在本期《【解密源码】RAGFlow 切分最佳实践- naive parser 语义切块（pdf 篇）》中，我们深入剖析了 .pdf 文档在 RAGFlow 中的完整解析流水线，看到了 RAGFlow 如何将结构丰富的 .pdf 文档转化为高质量的语义块，为后续的向量化和检索奠定坚实基础。
 
 在下一期中，我们将深入剖析 naive parser 下 .csv|xlsx 文件和 txt 文件以及各种代码文件的语义切块方案。
+
+# 版本更新补充信息
+在最新的 0.21.1 版本，RAGFlow 中布局识别器支持 MinerU，Docling 和 TecentADP 知识库应用的接入。流程上是用这些工具的解析能力获取文本内容，将文本内容加工成 RAGFlow 期望的格式进行后续向量化的操作，这里不做过多介绍，有兴趣的可以去对应平台了解研究。
+```python
+elif layout_recognizer == "MinerU":
+    mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
+    pdf_parser = MinerUParser(mineru_path=mineru_executable)
+    sections, tables = pdf_parser.parse_pdf(
+        filepath=filename,
+        binary=binary,
+        callback=callback,
+        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+        backend=os.environ.get("MINERU_BACKEND", "pipeline"),
+        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+    )
+
+elif layout_recognizer == "Docling":
+    pdf_parser = DoclingParser()
+    sections, tables = pdf_parser.parse_pdf(
+        filepath=filename,
+        binary=binary,
+        callback=callback,
+        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+    )
+    parser_config["chunk_token_num"] = 0
+    res = tokenize_table(tables, doc, is_english)
+
+elif layout_recognizer == "TCADP Parser":
+    tcadp_parser = TCADPParser()
+    sections, tables = tcadp_parser.parse_pdf(
+        filepath=filename,
+        binary=binary,
+        callback=callback,
+        output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+        file_type="PDF"
+    )
+```
