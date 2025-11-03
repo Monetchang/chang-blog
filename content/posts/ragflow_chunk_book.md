@@ -17,7 +17,7 @@ book 模式 面向长篇书籍类文档（docx/pdf/txt/html/doc），通过对�
 
 **设计亮点**
 - 语义级正文过滤：通过正则与上下文规则剔除目录、致谢等非正文部分；
-- 文本块连续性优化：通过 _naive_vertical_merge 与 _merge_with_same_bullet 修复 OCR 切分断裂、项目符号分裂等问题。
+- 文本块连续性优化：pdf 格式文档通过 _naive_vertical_merge 与 _merge_with_same_bullet 修复 OCR 切分断裂、项目符号分裂等问题。
 
 # 手撕版
 书籍的解析支持文件格式为 docx|pdf|txt|html|doc 五种格式。其中官方建议由于一本书篇幅较长，并非所有部分都有用，如果是 PDF 格式，请为每本书设置页码范围，以消除负面影响并节省计算时间。
