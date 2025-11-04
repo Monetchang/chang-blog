@@ -177,6 +177,7 @@ for d, blob in files:
 
 ## 内容增强与索引
 每个 chunk 会生成一个文档片段，赋予唯一 id，以及其他 metadata。
+> *Tips：ck["content_with_weight"] 的值是经过解析器分片处理后的 chunk 内容。*
 
 ```python
 for (docinfo, _), th in zip(files, threads):
