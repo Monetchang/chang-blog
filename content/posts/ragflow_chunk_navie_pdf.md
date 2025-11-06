@@ -745,7 +745,7 @@ self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(Byt
 ```
 2）使用视觉大模型识别图像生成文本
 ```python
- text = picture_vision_llm_chunk(
+text = picture_vision_llm_chunk(
     binary=img_binary,
     vision_model=self.vision_model,
     prompt=vision_llm_describe_prompt(page=pdf_page_num + 1),
