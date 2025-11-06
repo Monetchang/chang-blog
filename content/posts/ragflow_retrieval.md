@@ -12,11 +12,80 @@ categories: ["RAGFlow"]
 
 # 手撕版
 
-## 查询配置初始化
+## 1. 召回参数处理
+### 1.1 用户 token 鉴权
+```python
+token = request.headers.get('Authorization').split()[1]
+objs = APIToken.query(token=token)
+if not objs:
+    return get_json_result(
+        data=False, message='Authentication error: API key is invalid!"', code=settings.RetCode.AUTHENTICATION_ERROR)
+```
+### 1.2 请求参数解析
+```python
+req = request.json
+kb_ids = req.get("kb_id", [])                    # 知识库ID列表
+doc_ids = req.get("doc_ids", [])                 # 指定文档ID过滤
+question = req.get("question")                   # 用户查询问题
+page = int(req.get("page", 1))                   # 页码，默认第1页
+size = int(req.get("page_size", 30))             # 每页大小，默认30条
+similarity_threshold = float(req.get("similarity_threshold", 0.2))  # 相似度阈值
+vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))  # 向量权重
+top = int(req.get("top_k", 1024))                # 初始召回数量
+highlight = bool(req.get("highlight", False))    # 是否高亮匹配内容
+```
+### 1.3 模型一致性判断
+在 RAGFlow 中，创建知识库需要配置相应 Embedding model，这里需要检查所有查询的知识库使用相同的 Embedding model，避免不同模型产生的向量空间不一致问题。
+```python
+kbs = KnowledgebaseService.get_by_ids(kb_ids)
+embd_nms = list(set([kb.embd_id for kb in kbs]))
+if len(embd_nms) != 1:
+    return get_json_result(
+        data=False, message='Knowledge bases use different embedding models or does not exist."',
+        code=settings.RetCode.AUTHENTICATION_ERROR)
+
+```
+### 1.4 模型初始化
+初始化 Embedding model，rerank model，和 chat model。
+```python
+embd_mdl = LLMBundle(kbs[0].tenant_id, LLMType.EMBEDDING, llm_name=kbs[0].embd_id)
+rerank_mdl = None
+if req.get("rerank_id"):
+    rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
+if req.get("keyword", False):
+    chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
+```
+
+### 1.5 查询增强处理
+通过 chat model 针对查询进行语义增强
+```python
+if req.get("keyword", False):
+    chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
+    question += keyword_extraction(chat_mdl, question)
+
+# prompt
+## Role
+You are a text analyzer.
+
+## Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+## Requirements
+- Summarize the text content, and give the top {{ topn }} important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.
+
+---
+
+## Text Content
+{{ content }}
+```
 
 
-## 重排序分页策略
-## 构建搜索参数
+## 2. 执行召回
+
+### 2.1 构建召回参数
 ```python
 RERANK_LIMIT = math.ceil(64/page_size) * page_size if page_size>1 else 1
 req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RERANK_LIMIT), "size": RERANK_LIMIT,
@@ -25,13 +94,13 @@ req = {"kb_ids": kb_ids, "doc_ids": doc_ids, "page": math.ceil(page_size*page/RE
         "available_int": 1}
 ```
 
-## 执行搜索
-
+### 2.2 执行召回
 ```python
 sres = self.search(req, [index_name(tid) for tid in tenant_ids],
                     kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
 ```
-### 查询配置初始化
+
+### 2.3 召回配置初始化
 ```python
 def search(self, req, idx_names: str | list[str],
            kb_ids: list[str],
@@ -57,7 +126,7 @@ def search(self, req, idx_names: str | list[str],
                     "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
 ```
 
-### 无查询词的简单搜索
+### 2.4 无查询词的简单搜索
 针对没有查询问题的场景，返回对应的 topk chunk。
 ```python
 qst = req.get("question", "")
@@ -73,15 +142,15 @@ if not qst:
     total = self.dataStore.getTotal(res)
 ```
 
-### 有查询词的智能搜索
-#### 解析查询问题
+### 2.5 有查询词的智能搜索
+#### 2.5.1 解析查询问题
 ```python
 matchText, keywords = self.qryr.question(qst, min_match=0.3)
 
 def question(self, txt, tbl="qa", min_match: float = 0.6):
     ...
 ```
-**1. 规范查询问题文本格式**
+**1）规范查询问题文本格式**
 
 **在英文和中文文本之间自动添加空格，使文本格式更加规范，提高可读性。**
 ```python
@@ -127,7 +196,7 @@ def rmWWW(txt):
     return txt
 ```
 
-**2. 英文查询处理**
+**2）英文查询处理**
 
 **分词后进行分词的权重计算。**
 ```python
@@ -189,7 +258,7 @@ for i in range(1, len(tks_w)):
     )
 ```
 
-**3. 构建最终查询参数**
+**3）构建最终查询参数**
 ```python
 return MatchTextExpr(
     self.query_fields, query, 100
@@ -212,7 +281,7 @@ return MatchTextExpr(
 }
 ```
 
-**4. 中文查询处理**
+**4）中文查询处理**
 
 **与英文的处理流程大致相同。**
 ```python
@@ -268,7 +337,7 @@ matchText, keywords = self.qryr.question(qst, min_match=0.3)
 keywords = []
 ```
 
-#### 稀疏检索
+#### 2.5.2 稀疏检索
 没有设置 Embedding model，通过查询语句和筛选项进行检索。
 ```python
 if emb_mdl is None:
@@ -282,7 +351,7 @@ if emb_mdl is None:
     total = self.dataStore.getTotal(res)
 ```
 
-#### 混合检索（稠密+稀疏）
+#### 2.5.3 混合检索（稠密+稀疏）
 先获取查询文本的向量表示
 ```python
 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
@@ -297,7 +366,7 @@ res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, 
 total = self.dataStore.getTotal(res)
 ```
 
-#### 空结果回退策略
+#### 2.5.4 空结果回退策略
 当通过上述方案未检索到任何结果，则尝试放宽条件重新搜索
 
 如果过滤条件中有指定文档 id，则进入无查询词的简单搜索返回 limit 切块。
@@ -320,7 +389,7 @@ res = self.dataStore.search(
 total = self.dataStore.getTotal(res)
 ```
 
-## 重排序
+## 3. 重排序
 如果指定重排序模型，检索分块数大于 0，则使用指定重排序模型对结果进行重排序。
 ```python
 if rerank_mdl and sres.total > 0:
@@ -346,17 +415,154 @@ else:
     vsim = sim
 ```
 
-### 指定模型重排序
+### 3.1 指定模型重排序
 ```python
 sim, tsim, vsim = self.rerank_by_model(rerank_mdl,
                                             sres, question, 1 - vector_similarity_weight,
                                             vector_similarity_weight,
                                             rank_feature=rank_feature)
 ```
+#### 3.1.1 文本相似度计算
+```python
+tksim = self.qryr.token_similarity(keywords, ins_tw)
+```
+通过 weights 方法计算所有分词的权重，构成查询词权重字典和文档词权重字典列表，weights 方法的实现在英文查询处理有详细介绍。
+```python
+def token_similarity(self, atks, btkss):
+    def toDict(tks):
+        d = defaultdict(int)
+        wts = self.tw.weights(tks, preprocess=False)  # 计算词权重
+        for token, weight in wts:
+            d[token] += weight
+        return d
+    
+    query_dict = toDict(atks) # 查询词加权字典
+    doc_dicts = [toDict(tks) for tks in btkss]  # 文档词权重字典列表
+```
+通过相似度计算公式：相似度 = 查询词的匹配权重/总权重，得到查询词对于各个文档的相似度列表。
+```python
+return [self.similarity(query_dict, doc_dict) for doc_dict in doc_dicts]
 
-### ES 重排序
+def similarity(self, qtwt, dtwt):
+    s = 1e-9
+    for k, v in qtwt.items():
+        if k in dtwt:
+            s += v 
+    
+    q = 1e-9
+    for k, v in qtwt.items():
+        q += v
+    
+    return s / q 
+```
+
+#### 3.1.2 指定 rerank 模型相似度计算
+```python
+doc_texts = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+vtsim, _ = rerank_mdl.similarity(query, doc_texts)
+```
+
+#### 3.1.3 排名特征计算
+主要是基于标签特征计算文档匹配度，整体实现比较复杂，有兴趣的可以对源码进行研究。这里简单介绍下思路：
+- 先对用户查询进行特征计算，计算出 n 个特征标签，以及每个特征标签的权重；
+- 针对这 n 个特征标签查询出每个标签对应的文档数量；
+- 根据特征标签自身权重和文档数计算特征标签在总文档之中的权重；
+- 取权重前 3 作为用户查询特征标签；
+- 计算查询特征向量的 L2 范数，提取 PageRank 分数（文档权威性），计算每个文档的标签匹配度；
+- 最终分数融合得到排名。
+```python
+rank_fea = self._rank_feature_scores(rank_feature, sres)
+```
+
+#### 3.1.4 最终混合相似度
+文本相似度 + 排名特征，然后与向量相似度加权融合
+```python
+final_scores = tkweight * (np.array(tksim) + rank_fea) + vtweight * vtsim
+```
+
+### 3.2 ES 重排序
+整体流程和指定模型的重排序流程相似，计算相似度，计算特征，到最终分数排名，在计算相似度中与指定模型不同的是，将指定 rerank 模型向量相似度计算步骤替换成 cos 余弦相似度计算。
 ```python
 sim, tsim, vsim = self.rerank(
-        sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
-        rank_feature=rank_feature)
+    sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
+    rank_feature=rank_feature)
+```
+
+### 3.3 未指定模型重排序（基于 Infinity）
+因为 Infinity 在内部已经对文本检索和向量检索的分数进行了归一化处理，所以直接赋值输出即可。
+```python
+# Don't need rerank here since Infinity normalizes each way score before fusion.
+sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+sim = [s if s is not None else 0. for s in sim]
+tsim = sim
+vsim = sim
+```
+
+重排序流程结束后，会得到三个相似度：
+- sim：混合相似度
+- tsim：文本相似度
+- vsim：向量相似度
+
+## 4. chunk 列表构建输出
+### 4.1 分页和排序
+根据用户传参返回对应重排序结果，并进行相似度降序排列。
+```python
+max_pages = RERANK_LIMIT // page_size
+page_index = (page % max_pages) - 1
+begin = max(page_index * page_size, 0)
+sim = sim[begin : begin + page_size]
+
+# 按相似度降序排序
+sim_np = np.array(sim)
+idx = np.argsort(sim_np * -1)
+```
+
+### 4.2 相似度阈值过滤
+根据设置的相似度阈值过滤低于阈值的结果。
+```python
+ dim = len(sres.query_vector)
+    vector_column = f"q_{dim}_vec"
+    zero_vector = [0.0] * dim
+    filtered_count = (sim_np >= similarity_threshold).sum()
+    ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
+    for i in idx:
+        if sim[i] < similarity_threshold:
+            break
+```
+
+### 4.3 构建单条数据结构
+```python
+d = {
+    "chunk_id": id,
+    "content_ltks": chunk["content_ltks"],  # 分词后的内容
+    "content_with_weight": chunk["content_with_weight"],  # 带权重的内容
+    "doc_id": did,
+    "docnm_kwd": dnm,
+    "kb_id": chunk["kb_id"],
+    "important_kwd": chunk.get("important_kwd", []),  # 重要关键词
+    "image_id": chunk.get("img_id", ""),  # 关联图片ID
+    "similarity": sim[i],  # 最终相似度
+    "vector_similarity": vsim[i],  # 向量相似度
+    "term_similarity": tsim[i],  # 文本相似度
+    "vector": chunk.get(vector_column, zero_vector),  # 向量数据
+    "positions": position_int,  # 在文档中的位置
+    "doc_type_kwd": chunk.get("doc_type_kwd", "")  # 文档类型
+}
+```
+
+### 4.4 返回列表
+添加文档聚合信息，按照降序排列输出。文档聚合信息包含每个文档在最终结果中出现了多少个 chunk。
+```python
+ranks["chunks"].append(d)
+if dnm not in ranks["doc_aggs"]:
+    ranks["doc_aggs"][dnm] = {"doc_id": did, "count": 0}
+ranks["doc_aggs"][dnm]["count"] += 1
+ranks["doc_aggs"] = [{"doc_name": k,
+                      "doc_id": v["doc_id"],
+                      "count": v["count"]} for k, v in 
+                     sorted(ranks["doc_aggs"].items(),
+                            key=lambda x: x[1]["count"] * -1)]  # 按count降序
+ranks["chunks"] = ranks["chunks"][:page_size]
+
+return ranks
 ```

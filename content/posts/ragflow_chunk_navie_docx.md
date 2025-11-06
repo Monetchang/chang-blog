@@ -46,7 +46,7 @@ Docx 继承基类 DocxParser
 class Docx(DocxParser):
 ```
 
-### DocxParser 基类
+### 1.1 DocxParser 基类
 对文档结构的初步提取。
 
 ```python
@@ -81,9 +81,9 @@ class RAGFlowDocxParser:
 
 **\_\_call__**：docx 文档中的段落和表格分别进行处理
 
-#### __compose_table_content
+#### 1.1.1 __compose_table_content
 
-##### 1. 判断表格单元格内容类型
+**1）判断表格单元格内容类型**
 设计了 11 种内容类型，通过 tokenize 对表格中的文本进行类型判定，打上相应标签。
 
 ```python
@@ -117,7 +117,7 @@ class RAGFlowDocxParser:
 
     return "Ot" # 其他
 ```
-##### 2. 识别表头
+**2）识别表头**
 从表格第二行开始逐个对每行每列中的信息进行类型分析，汇总各行中所有类型取最多频率最高的类型作为该表格类型。
 
 *Tips：从第二行获取是避免表格表头的影响。*
@@ -179,7 +179,7 @@ while t > 0:
   t -= 1
 ```
 
-##### 3. 处理表格信息
+**3）处理表格信息**
 遍历表头信息中每一列信息，以及内容行中每一列信息，进行对应的信息合并。
 
 ```python
@@ -203,7 +203,7 @@ if colnm > 3:
 return ["\n".join(lines)]
 ```
 
-### Docx 类
+### 1.2 Docx 类
 
 ```python
 class Docx(DocxParser):
@@ -228,7 +228,7 @@ class Docx(DocxParser):
 
 **\_\_call__**：对 docx 文档中的段落和表格分别进行处理。
 
-#### __get_nearest_title
+#### 1.2.1 __get_nearest_title
 构建完整的文档段落，表格结构映射。
 
 ```python
@@ -274,7 +274,7 @@ while current_level > 1:
         ...
 ```
 
-#### \_\_call__
+#### 1.2.2 \_\_call__
 图片与段落文本内容建立关联，并将每个段落中的多张图片合并成单张图片。
 
 ```python
@@ -392,7 +392,7 @@ vision_figure_parser_docx_wrapper 将包含图片信息的对象数组转换成 
 )
 ```
 
-### VisionFigureParser 类
+### 2.1 VisionFigureParser 类
 
 ```python
  def __init__(self, vision_model, figures_data, *args, **kwargs):
@@ -425,7 +425,7 @@ def __call__(self, **kwargs):
 res = tokenize_table(tables, doc, is_english)
 ```
 
-### tokenize_table
+### 3.1 tokenize_table
 对于已预处理成单个字符串的表格内容进行处理。
 
 ```python
@@ -478,7 +478,7 @@ chunks, images = naive_merge_docx(
         "delimiter", "\n!?。；！？"))
 ```
 
-### naive_merge_docx
+### 4.1 naive_merge_docx
 add_chunk 对不同大小的 chunk 块进行处理：
 
 - 小于 8 token 大小不进行处理

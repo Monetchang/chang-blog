@@ -58,7 +58,7 @@ doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
 
 进行解析前的基础配置，包括语言，chunk token 数，分隔符，识别策略，分词器 tokenize。这里重点看下分词器的实现，可以看到这里有存在两个分词器 rag_tokenizer.tokenize 和 rag_tokenizer.fine_grained_tokenize，可以理解成基础分词器和二次分词器。
 
-## tokenize
+## 1. tokenize
 
 文本前置处理
 
@@ -128,7 +128,7 @@ res.append(" ".join(self.sortTks_(tkslist)[0][0]))
 
 对正，反两种分词结果，分词相同的部分进行合并；分词有歧义的部分使用 DFS 算法穷举出所有分词路径，后对各种分词路径进行多维度评分，评分基于惩罚过度细分的分词结果，长词比例项，词频等维度，消除分词分歧，返回最终的分词结果。
 
-### fine_grained_tokenize
+## 2. fine_grained_tokenize
 
 对经过基础分词器 tokenize 的分词结果再次进行精细分词。
 

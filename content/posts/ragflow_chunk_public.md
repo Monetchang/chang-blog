@@ -63,7 +63,7 @@ RAGFlow 是一个面向工程化的 RAG 工作流框架，它提供了从文档�
 
 **接下来，我们将深入代码细节，逐一拆解"省流版"中的每一步**
 
-## 入口与路由
+## 1. 入口与路由
 
 在提供给前端的接口中，有个 `/upload_and_parse` 接口，通过接口语义可以知道这个接口的功能是用来接收上传文档并进行解析的
 
@@ -89,7 +89,7 @@ def upload_and_parse():
 
 跳转到 `doc_upload_and_parse` 函数后，可以看到第一部分代码
 
-## 知识库关联
+## 2. 知识库关联
 通过 conversation_id 获取关联的 Knowledgebase（知识库）
 
 ```python
@@ -111,7 +111,7 @@ if not e:
 
 💡 说明：知识库在 RAGFlow 中的含义，这里不做重点介绍，可以理解一个独立的知识集合，包括多个文档，每个对话（Conversation）都绑定一个或多个知识库，以限定检索范围。。
 
-## 文件存储与登记
+## 3. 文件存储与登记
 文件上传逻辑由`FileService.upload_document()`实现。将文件存储到对应的知识库中，并返回相应文件信息。
 
 ```python
@@ -141,7 +141,7 @@ DocumentService.insert(doc)
 - parser_id 决定文件使用哪种解析器。
 - 每个知识库可配置默认解析器（PDF、图片、音频等类型各不同）。
 
-## 核心解析与分块
+## 4. 核心解析与分块
 通过解析器工厂（FACTORY）动态选择不同的解析器，对不同格式文件进行解析。
 
 ```python
@@ -175,7 +175,7 @@ for d, blob in files:
 
 通过 FACTORY 字典可以看到不同的 ParserType 值对应不同的解析方式 Presentation（PPT）， Picture（图片），Audio（音频），Email（邮件），如果没有匹配，就用默认的 Naive 解析。
 
-## 内容增强与索引
+## 5. 内容增强与索引
 每个 chunk 会生成一个文档片段，赋予唯一 id，以及其他 metadata。
 > *Tips：ck["content_with_weight"] 的值是经过解析器分片处理后的 chunk 内容。*
 
@@ -224,7 +224,7 @@ try:
     })
 ```
 
-## 向量化与持久化
+## 6. 向量化与持久化
 
 将 chunk 通过 embedding 模型进行向量化并存储在 d 结构体中。
 ```python
@@ -265,7 +265,7 @@ else:
     raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 ```
 
-## 返回结果
+## 7. 返回结果
 更新 chunk 信息，并返回对应上传文档的 id 列表。
 
 ```python
