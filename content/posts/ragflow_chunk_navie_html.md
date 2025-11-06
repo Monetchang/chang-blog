@@ -43,13 +43,13 @@ RAGFlow 对 HTML、JSON、DOC 三类文档采用了“轻结构化解析 + 动�
 
 # 手撕版
 
-## HTML 文档
-1. 解析器初始化，调用类实例解析 html 文档
+## 1. HTML 文档
+解析器初始化，调用类实例解析 html 文档
 ```python
 sections = HtmlParser()(filename, binary, chunk_token_num)
 ```
 
-### HtmlParser 类
+### 1.1 HtmlParser 类
 推断正确编码进行解码后，解析 html 文件。
 
 ```python
@@ -64,9 +64,10 @@ class RAGFlowHtmlParser:
         return self.parser_txt(txt, chunk_token_num)
 ```
 
-#### parser_txt
+#### 1.1.1 parser_txt
 `parser_txt` 是解析 html 文档的核心方法，主要分 4 个步骤：
-1. 移除文档干扰信息
+
+**1）移除文档干扰信息**
 ```python
 # 删除 style 和 script 标签
 for style_tag in soup.find_all(["style", "script"]):
@@ -83,7 +84,7 @@ for tag in soup.find_all(True):
 for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
     comment.extract()
 ```
-2. 递归提取文本
+**2）递归提取文本**
 ```python
 cls.read_text_recursively(soup.body, temp_sections, chunk_token_num=chunk_token_num)
 
@@ -125,7 +126,8 @@ def read_text_recursively(cls, element, parser_result, chunk_token_num=512, pare
 >*表格节点特殊处理：保留表格原始样式标签，不会进行文本提取。如："content": “`<table border="1"><tr><th>姓名</th><th>年龄</th></tr><tr><td>张三</td><td>25</td></tr><tr><td>李四</td><td>30</td></tr></table>`”*,
 
 >*提取文本返回结构中设计 block id 信息，用于后续合并文本*
-3. 文本合并
+
+**3）文本合并**
 ```python
 block_txt_list, table_list = cls.merge_block_text(temp_sections)
 
@@ -151,7 +153,8 @@ def merge_block_text(cls, parser_result):
 >*根据 block id 合并文本，对于表格仍保持原始结构完整。*
 
 >*将标题转换成 Markdown 格式（TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "#####", "h5": "#####", "h6": "######"}）保留语义信息*
-4. 文本切分
+
+**4）文本切分**
 按 `chunk_token_num` 配置切分文本
 ```python
 sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
@@ -161,13 +164,13 @@ sections = cls.chunk_block(block_txt_list, chunk_token_num=chunk_token_num)
         ...
 ```
 
-## JSON 文档
-1. 解析器初始化，调用类实例解析 JSON 文档
+## 2. JSON 文档
+解析器初始化，调用类实例解析 JSON 文档
 ```python
 sections = JsonParser(chunk_token_num)(binary)
 ```
 
-### JsonParser 类
+### 2.1 JsonParser 类
 推断正确编码进行解码后，解析 JSON 文件，兼容普通 JSON 格式和 JSONL 格式。
 ```python
 def __call__(self, binary):
@@ -194,8 +197,8 @@ def __call__(self, binary):
     ...
 ```
 
-#### split_json
-1. 数据结构转换，递归将 JSON 中列表值转换成字典。
+#### 2.1.1 split_json
+1）数据结构转换，递归将 JSON 中列表值转换成字典。
 ```python
 preprocessed_data = self._list_to_dict_preprocessing(json_data)
 
@@ -230,7 +233,7 @@ def _list_to_dict_preprocessing(self, data: Any) -> Any:
   }
 }
 ```
-2. 按照长度配置对 JSON 进行切分，输出 chunk。
+2）按照长度配置对 JSON 进行切分，输出 chunk。
 ```python
 chunks = self._json_split(preprocessed_data, None, None)
 
@@ -286,7 +289,7 @@ def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
     d[path[-1]] = value
 ```
 
-## DOC 文档
+## 3. DOC 文档
 兼容旧版 word .doc 文档解析。使用 python Tika 库解析 doc 文档。
 ```python
  elif re.search(r"\.doc$", filename, re.IGNORECASE):

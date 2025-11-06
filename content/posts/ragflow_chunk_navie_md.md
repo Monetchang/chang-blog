@@ -34,12 +34,12 @@ Markdown 文档的语义切块在 RAGFlow 中由三个阶段完成：**语法结
 
 # 手撕版
 
-1. 解析器初始化
+## 1. 解析器初始化
 ```python
 markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
 ```
 
-## Markdown 类
+### 1.1 Markdown 类
 继承 `MarkdownParser` 基类，解析表格；使用 `MarkdownElementExtractor().extract_elements()` 解析文本内容。
 ```python
 class Markdown(MarkdownParser):
@@ -63,12 +63,12 @@ class Markdown(MarkdownParser):
         return sections, tbls
 ```
 
-## MarkdownParser 基类
+### 1.2 MarkdownParser 基类
 
 **extract_tables_and_remainder**：提取文档中的表格以及其他部分。
 
-### extract_tables_and_remainder
-**1. 两种表格识别方案，兼容 markdown 中两种表格的语法形式。**
+### 1.2.1 extract_tables_and_remainder
+**1）两种表格识别方案，兼容 markdown 中两种表格的语法形式。**
 ```python
 if "|" in markdown_text:  # for optimize performance
     # 标准 Markdown 表格
@@ -118,7 +118,7 @@ if "|" in markdown_text:  # for optimize performance
     李四 30   销售部 12000
     王五 28   市场部 13000
 
-**2. 两种表格解析方案**
+**2）两种表格解析方案**
 ```python
 if separate_tables:
     # Skip this match (i.e., remove it)
@@ -166,7 +166,7 @@ else:
 正文...
 ```
 
-## MarkdownElementExtractor 类
+### 1.3 MarkdownElementExtractor 类
 建立针对 Markdown 语法规则，通过不同规则解析文本中的各个元素。
 ```python
 def extract_elements(self):
@@ -198,22 +198,22 @@ def extract_elements(self):
 ```
 
 ------
-2. 通过解析器 `markdown_parser` 解析出文本结构和表格内容。
+## 2. 通过解析器 `markdown_parser` 解析出文本结构和表格内容。
 ```python
 sections, tables = markdown_parser(filename, binary, separate_tables=False)
 ```
 
 ------
-3. 获取 section 中的图片
+## 3. 获取 section 中的图片
 ```python
 section_images = []
 for idx, (section_text, _) in enumerate(sections):
     images = markdown_parser.get_pictures(section_text) if section_text else None
 ```
 
-### markdown_parser.get_pictures
+### 3.1 markdown_parser.get_pictures
 
-1. 获取图片链接
+1）获取图片链接
 
 ```python
 image_urls = self.get_picture_urls(text)
@@ -229,7 +229,7 @@ def get_picture_urls(self, sections):
     return html_images
 ```
 
-2. 获取图片（远程 or 本地）
+2）获取图片（远程 or 本地）
 ```python
 if url.startswith(('http://', 'https://')):
     # 远程 URL：下载图片
@@ -248,8 +248,7 @@ else:
     images.append(img)
 ```
 
-------
-4. 垂直合并同一个 section 中图片，使用视觉模型将图片解析成文本描述
+## 4. 垂直合并同一个 section 中图片，使用视觉模型将图片解析成文本描述
 ```python
 combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
 section_images.append(combined_image)
@@ -259,15 +258,15 @@ sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boost
 ```
  > *VisionFigureParser 的详细解析可参考《naive parser 语义切块（docx 篇）》中的 VisionFigureParser 类模块*
 
--------
-5. 对文本和表格内容进行分词
+
+## 5. 对文本和表格内容进行分词
 ```python
 res = tokenize_table(tables, doc, is_english)
 ```
  > *tokenize_table 的详细解析可参考《navie 分词器原理》*
 
 --------
-6. sections 后处理
+## 6. sections 后处理
 ```python
 chunks, images = naive_merge_with_images(sections, section_images,
                                 int(parser_config.get(

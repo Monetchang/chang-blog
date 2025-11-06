@@ -60,10 +60,10 @@ PdfParser 基类的核心功能在《naive parser 语义切块（PDF 篇）》�
 
 - **__filterout_scraps**：对碎片化文本进行二次清理与组装，进一步优化 OCR 文本的完整性。
 
-### Pdf 类
+### 2.1 Pdf 类
 Pdf 类作为入口点，调用 PdfParser 中提供的功能实现整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，这点与 naive parser 下的 Pdf 类职能一致，**但具体实现内容存在差异**。
 
-#### _line_tag
+#### 2.1.1 _line_tag
 这里需要先提到 PdfParser 中另外一个功能函数 _line_tag，它主要为文本框（bx）生成一个位置信息标签字符串，用于标识该文本框在所在 pdf 页中的具体位置。
 ```python
 def _line_tag(self, bx, ZM):
@@ -104,8 +104,8 @@ bx = {
 # 1100.0 文本框顶部相较于 page2 顶部垂直坐标
 # 150 文本框底部相较于 page3 顶部垂直坐标
 ```
-#### Pdf 主流程
-1. 调用 PdfParser 中提供的功能进行内容提取和排序。
+#### 2.1.2 Pdf 主流程
+1）调用 PdfParser 中提供的功能进行内容提取和排序。
 ```python
  # 静态的 pdf 页面转换为可结构化数据 
  self.__images__(
@@ -130,7 +130,7 @@ self._concat_downward()
 self._filter_forpages()
 ```
 
-2. 文本前置处理，水平排序和处理文本空格。
+2）文本前置处理，水平排序和处理文本空格。
 ```python
 if column_width < self.page_images[0].size[0] / zoomin / 2:
     # 水平排序
@@ -139,7 +139,7 @@ for b in self.boxes:
     b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 ```
 
-3. 如果启示 page 不是首页，默认前面的标题、作者、摘要等已经被提取过，直接返回正文 section 内容： (文本内容 + 位置标签, 布局类型)。
+3）如果启示 page 不是首页，默认前面的标题、作者、摘要等已经被提取过，直接返回正文 section 内容： (文本内容 + 位置标签, 布局类型)。
 ```python
 if from_page > 0:
     return {
@@ -152,7 +152,7 @@ if from_page > 0:
     }
 ```
 
-4. 从首页开始，提取标题，作者信息。这里默认这些信息位于文档开头，所以只在前 32 个文本框中进行提取。
+4）从首页开始，提取标题，作者信息。这里默认这些信息位于文档开头，所以只在前 32 个文本框中进行提取。
 ```python
 title = ""
 authors = []
@@ -173,7 +173,7 @@ while i < min(32, len(self.boxes)-1):
         break
 ```
 
-5. 提取摘要，方案与提取标题基本相同。遍历前 32 个文本框，查找“Abstract”或“摘要”段落，若该段落足够长（字数或单词数超过阈值），就认为是完整摘要。
+5）提取摘要，方案与提取标题基本相同。遍历前 32 个文本框，查找“Abstract”或“摘要”段落，若该段落足够长（字数或单词数超过阈值），就认为是完整摘要。
 ```python
 abstr = ""
 i = 0
@@ -192,7 +192,7 @@ while i + 1 < min(32, len(self.boxes)):
         break
 ```
 
-6 返回最终结构化结果
+6）返回最终结构化结果
 ```python
 return {
     "title": title,
@@ -216,10 +216,10 @@ return {
 }
 ```
 
-## 数据后处理
+## 3. 数据后处理
 从 Pdf 类实例化方法获取到结构化数据后，进行一系列的数据后处理，最终生成 chunk 数据。
 
-1. 标题，作者，表格分词。分词器实现可参考《分词器原理》。
+1）标题，作者，表格分词。分词器实现可参考《分词器原理》。
 ```python
 doc = {"docnm_kwd": filename, "authors_tks": rag_tokenizer.tokenize(paper["authors"]),
         "title_tks": rag_tokenizer.tokenize(paper["title"] if paper["title"] else filename)}
@@ -229,7 +229,7 @@ doc["authors_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["authors_tks"])
 res = tokenize_table(paper["tables"], doc, eng)
 ```
 
-2. 摘要内容处理。将内容类型标记为 “abstract” 等优化召回，同时处理摘要内容中的图片，位置，和对内容信息进行分词。
+2）摘要内容处理。将内容类型标记为 “abstract” 等优化召回，同时处理摘要内容中的图片，位置，和对内容信息进行分词。
 ```python
 if paper["abstract"]:
     d = copy.deepcopy(doc)
@@ -243,7 +243,7 @@ if paper["abstract"]:
     res.append(d)
 ```
 
-3. 正文层级识别。先检测文档标题使用的编号样式类别，后结合编号样式确定标题的层级深度。
+3）正文层级识别。先检测文档标题使用的编号样式类别，后结合编号样式确定标题的层级深度。
 ```python
 sorted_sections = paper["sections"]
 # set pivot using the most frequent type of title,
@@ -290,7 +290,7 @@ most_level, levels = title_frequency(bull, sorted_sections)
 ```
 检测出编号样式后，通过 `title_frequency` 确定整个文档最常出现的章节标题层级 `most_level`，作为切分基准；同时也获取整个文档所有标题等级列表 `levels`。
 
-4. 按照 `most_level` 切分基准对内容进行切分，`<= most_level` 的内容会进行统一标记并**与同级内容和上一级内容**进行合并作为一个 chunk。
+4）按照 `most_level` 切分基准对内容进行切分，`<= most_level` 的内容会进行统一标记并**与同级内容和上一级内容**进行合并作为一个 chunk。
 ```python
 sec_ids = []
 sid = 0
@@ -310,7 +310,7 @@ for (txt, _), sec_id in zip(sorted_sections, sec_ids):
     chunks.append(txt)
     last_sid = sec_id
 ```
-5. 使用分词器对 chunk 进行分词输出最终结果
+5）使用分词器对 chunk 进行分词输出最终结果
 ```python
 res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
 ```

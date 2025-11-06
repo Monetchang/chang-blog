@@ -57,7 +57,7 @@ RAGFlow 针对 pdf 文档提供了**三种不同文档解析方案**，根据文
 
 # 手撕版
 
-## 1. 布局识别器
+## 1. 布局识别器选择
 两种布局识别器分别为 `DeepDOC` 和 `Plain Text`，分别对应不同的 pdf 解析方案。如果不属于这两种布局，保底使用视觉模型进行 pdf 解析。
 
 ``` python
@@ -85,7 +85,7 @@ Pdf 继承基类 PdfParser
 class Pdf(PdfParser):
 ```
 
-### PdfParser 基类
+### 2.1 PdfParser 基类
 PdfParser() 中实现了以下重要功能：
 
 **\_\_images__**： pdf 文档的数字化转换，将静态的 pdf 页面转换为可结构化数据，为后续的布局分析、表格提取等高级处理奠定基础。
@@ -116,7 +116,7 @@ def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
     tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
     return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 ```
-#### \_\_images__
+#### 2.1.1 \_\_images__
 函数中采用了 pdfplumber 和 pypdf 两个库来识别 pdf 文档。
 
 **pdfplumber**： 主要负责文档内容提取，内容图像生成，页面布局分析。
@@ -144,11 +144,12 @@ self.is_english = [
 ]
 ```
 使用 OCR 对 pdf 文档进行识别，这里对 OCR 流程做简单介绍：
-1. 文本框检测，检测文档中文本框的位置
+
+**1）文本框检测，检测文档中文本框的位置**
 ```python
 bxs = self.ocr.detect(np.array(img), device_id)
 ```
-2. 格式还原，坐标除以缩放因子（ZM）还原到原始 pdf 尺寸后排序文本框。
+**2）格式还原，坐标除以缩放因子（ZM）还原到原始 pdf 尺寸后排序文本框。**
 ``` python
 bxs = [(line[0], line[1][0]) for line in bxs]
 bxs = Recognizer.sort_Y_firstly(
@@ -169,7 +170,7 @@ bxs = Recognizer.sort_Y_firstly(
     self.mean_height[pagenum - 1] / 3,  # 排序阈值
 )
 ```
-3. 字符与文本框匹配
+**3）字符与文本框匹配**
 ```python
 for c in chars:
     ii = Recognizer.find_overlapped(c, bxs)  # 找到字符所属的文本框
@@ -186,7 +187,7 @@ for c in chars:
         
     bxs[ii]["chars"].append(c)       # 将字符加入对应文本框
 ```
-4. 文档重建，使用 pdfplumber 提取文字结合 OCR 检测文本框结构重建文档。
+**4）文档重建，使用 pdfplumber 提取文字结合 OCR 检测文本框结构重建文档。**
 ```python
 for b in bxs:
     if not b["chars"]:
@@ -207,14 +208,14 @@ for b in bxs:
             
     del b["chars"]  # 清理临时数据
 ```
-5. OCR 提取文字重建文档，pdfplumber 未提取到文字情况下，使用 OCR 方案进行文字识别填充重建文档。
+**5）OCR 提取文字重建文档，pdfplumber 未提取到文字情况下，使用 OCR 方案进行文字识别填充重建文档。**
 ```python
 texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
 for i in range(len(boxes_to_reg)):
     boxes_to_reg[i]["text"] = texts[i]  # 更新识别结果
     del boxes_to_reg[i]["box_image"]
 ```
-6. 整理重建结果
+**6）整理重建结果**
 ```python
 bxs = [b for b in bxs if b["text"]]  # 过滤空文本框
 
@@ -224,23 +225,24 @@ if self.mean_height[pagenum - 1] == 0:
 
 self.boxes.append(bxs)  # 存储最终结果
 ```
-#### _layouts_rec
+#### 2.1.2 _layouts_rec
 结合 pdfplumber 获取的内容业图像和 OCR 识别的文本框信息，进行文档每页的布局分析，和坐标重建。
 
-1. 布局分析，布局相较于文档框提供更高层次的文档语义信息。文档框中只包含位置坐标，所在页码，文本内容等信息，布局信息中包含文本类型信息，如是标题，正文，表格，页眉等，为后续针对性分析提供必要信息。
+1）布局分析，布局相较于文档框提供更高层次的文档语义信息。文档框中只包含位置坐标，所在页码，文本内容等信息，布局信息中包含文本类型信息，如是标题，正文，表格，页眉等，为后续针对性分析提供必要信息。
 ```python
 self.boxes, self.page_layout = self.layouter(self.page_images, self.boxes, ZM, drop=drop)
 ```
-2. 坐标重建，文本框中的坐标信息是对于所在页的，坐标都是独立从 0 开始，重建坐标是基于整个文档的全局坐标。
+2）坐标重建，文本框中的坐标信息是对于所在页的，坐标都是独立从 0 开始，重建坐标是基于整个文档的全局坐标。
 ```python
 for i in range(len(self.boxes)):
     self.boxes[i]["top"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
     self.boxes[i]["bottom"] += self.page_cum_height[self.boxes[i]["page_number"] - 1]
 ```
 
-#### _table_transformer_job
+#### 2.1.3 _table_transformer_job
 表格处理系统，根据布局分析得到的表格类型，对其表格数据内容进行提取处理。
-1. 根据布局分析中的表格，记录每页表格数量，裁剪出表格图像并记录位置坐标。
+
+1）根据布局分析中的表格，记录每页表格数量，裁剪出表格图像并记录位置坐标。
 ```python
 for p, tbls in enumerate(self.page_layout):
     tbls = [f for f in tbls if f["type"] == "table"]
@@ -254,7 +256,7 @@ for p, tbls in enumerate(self.page_layout):
         pos.append((left, top))  # 记录表格在页面中的位置
         imgs.append(self.page_images[p].crop((left, top, right, bott)))  # 裁剪表格图像
 ```
-2. **核心步骤：表结构识别**
+**2）核心步骤：表结构识别**
 
 `self.tbl_det(imgs)` 实际调用 `TableStructureRecognizer.__call__()` 方法,`TableStructureRecognizer.__call__()` 方法中兼容 onnx 和 ascend 两种推理后端.
 ``` python
@@ -301,7 +303,8 @@ recos = [
 ]
 ```
 
-3. 坐标系统转换和整合
+3）坐标系统转换和整合
+
 将表格局部坐标转换回基于 pdf 文档的全局坐标，最终形成的 self.tb_cpns 列表结构与 recos 类似，self.tb_cpns 中 x0，x1，top，bottom 坐标值基于整个 pdf 文档。
 ```python
 for i in range(len(tbcnt) - 1):  # for page
@@ -323,7 +326,8 @@ for i in range(len(tbcnt) - 1):  # for page
     self.tb_cpns.extend(pg)
 ```
 
-4. 定义排序函数 gather
+4）定义排序函数 gather
+
 `sort_Y_firstly` 按 Y 坐标排序由上至下排序，若在同一行则按 X 坐标由左到右排序；`layouts_cleanup` 去除重叠和低质量的布局组件。
 ```python
 def gather(kwd, fzy=10, ption=0.6):
@@ -332,7 +336,7 @@ def gather(kwd, fzy=10, ption=0.6):
     return Recognizer.sort_Y_firstly(eles, 0)
 ```
 
-5. 表格结构组件排序
+5）表格结构组件排序
 
 按类型收集表格结构组件进行排序
 ```python
@@ -345,7 +349,7 @@ clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"]
                key=lambda x: (x["pn"], x["layoutno"], x["x0"]))  # 按页码、表格索引、X坐标排序
 clmns = Recognizer.layouts_cleanup(self.boxes, clmns, 5, 0.5)    # 布局清理
 ```
-6.文本框与表结构关联
+6）文本框与表结构关联
 
 将 OCR 识别的文本框与排序后的表行，标题，文本通过坐标基于重叠度进行匹配，表列通过水平坐标进行匹配。最终输出
 ```python
@@ -357,8 +361,8 @@ for b in self.boxes:
 ```
 最终输出完整的符合文本框坐标的相应的表格内容。
 
-#### _filter_forpages
-1. 识别目录页等非正文内容页面
+#### 2.1.4 _filter_forpages
+1）识别目录页等非正文内容页面
 ```python
 i = 0
 while i < len(self.boxes):
@@ -368,7 +372,7 @@ while i < len(self.boxes):
         i += 1
         continue
 ```
-2. 识别关键非正文信息进行过滤
+2）识别关键非正文信息进行过滤
 
 识别目录标题，目录项前缀等关键非正文信息，对文本框中内容进行匹配，对匹配的信息进行删除
 ```python
@@ -399,7 +403,8 @@ if i < len(self.boxes) and prefix:
         break
 ```
 
-3. 对“脏页”进行删除
+3）对“脏页”进行删除
+
 通过“脏”字符匹配计算页面“脏度”，进行标记删除
 ```python
 # 计算页面脏度
@@ -420,8 +425,8 @@ if page_dirty:  # 如果存在脏页
 
 ```
 
-#### _extract_table_figure
-1. 提取文档图像，表格内容图像，并规划合并方案。
+#### 2.1.5 _extract_table_figure
+**1）提取文档图像，表格内容图像，并规划合并方案。**
 ```python
 tables = {}
 figures = {}
@@ -500,7 +505,8 @@ while i < len(self.boxes):
 2. 遇到图形标题：标记"1-1"为不合并
 3. 后续正文不会被错误合并到图形区域
 ```
-2. 跨页合并
+**2）跨页合并**
+
 针对三种情况不进行合并：标记为不合并，同页不合并，跨多页不合并，垂直距离检查大于23倍字符高度不合并（这可能是经过大量实验分析得出的最优经验值）
 ```python
 nomerge_lout_no = set(nomerge_lout_no)
@@ -523,7 +529,7 @@ while i - 1 >= 0:
     tables[k0].extend(tables[k])
     del tables[k]
 ```
-3. 标题检测和关联
+**3）标题检测和关联**
 
 标题坐标检测
 ```python
@@ -550,7 +556,7 @@ elif fk:
     logging.debug("FIGURE:" + self.boxes[i]["text"] + "; Cap: " + tk)
 ```
 
-4. 对图像内容进行裁剪处理
+**4）对图像内容进行裁剪处理**
 ```python
 if separate_tables_figures:
     figure_results.append((cropout(bxs, "figure", poss), [txt]))
@@ -559,12 +565,12 @@ else:
     res.append((cropout(bxs, "figure", poss), [txt]))
     positions.append(poss)
 ```
-5. 对表格内容进行图像裁剪处理
+**5）对表格内容进行图像裁剪处理**
 ```python
 res.append((cropout(bxs, "table", poss), 
                self.tbl_det.construct_table(bxs, html=return_html, is_english=self.is_english)))
 ```
-6. 最终结果组装返回
+**6）最终结果组装返回**
 ```python
 if separate_tables_figures:
     assert len(positions) + len(figure_positions) == len(res) + len(figure_results)
@@ -588,7 +594,7 @@ else:
 >4. 可以结合多模态进一步校准信息。
 
 基于对 PdfParser 类的分析，所有功能方法都在处理和丰富 self.boxes 列表，最终输出的 self.boxes 列表中的元素主要包含以下结构化信息：
-1. 基础位置信息
+**1）基础位置信息**
 ```python
 {
     "page_number": 1,           # 元素所在的页码（从1开始）
@@ -598,14 +604,14 @@ else:
     "bottom": 70.3,            # 元素下边界Y坐标（相对于文档顶部）
 }
 ```
-2. 文本内容
+**2）文本内容**
 ```python
 {
     "text": "这是文本内容",      # 元素的文本内容
     "layout_type": "text",      # 布局类型：text, table, figure, equation等
 }
 ```
-3. 布局和结构信息
+**3）布局和结构信息**
 ```python
 {
     "layoutno": 0,             # 布局编号，同一布局内的元素有相同编号
@@ -613,7 +619,7 @@ else:
     "in_row": 3,               # 同一行中的元素数量
 }
 ```
-4. 表格相关字段（如果是表格元素）
+**4）表格相关字段（如果是表格元素）**
 ```python
 {
     "R": 2,                    # 行索引
@@ -628,7 +634,7 @@ else:
     "SP": 1,                   # 跨行/跨列标识
 }
 ```
-5. 图像和位置标签
+**5）图像和位置标签**
 ```python
 {
     "position_tag": "@@1\t100.5\t300.2\t50.8\t70.3##",  # 位置标签，用于图像裁剪
@@ -639,7 +645,7 @@ else:
 }
 ```
 
-### Pdf 类
+### 2.2 Pdf 类
 Pdf 类作为入口点，调用 PdfParser 中提供的功能实现整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，并对解析后的文档最后通过规则进行多栏排版识别，垂直文档排序，跨页文本合并等操作。
 
 ```python
@@ -678,7 +684,7 @@ def __call__(self, filename, binary=None, from_page=0,
 
 在 `_naive_vertical_merge` 函数中实现垂直方向上智能合并相邻的文本框功能，可以简单看以下两个设计点：
 
-1. 多栏布局排版识别，重排序
+**1）多栏布局排版识别，重排序**
 ```python
 # 计算典型列宽
 column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
@@ -693,7 +699,7 @@ if column_width < self.page_images[0].size[0] / zoomin / self.column_num:
     self.boxes = self.sort_X_by_page(self.boxes, column_width / self.column_num)
 ```
 
-2. 合并规则
+**2）合并规则**
 ```python
 # 合并规则
 concatting_feats = [
@@ -733,11 +739,11 @@ pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
 VisionParser 中包含两个重要步骤：
 
-1. 使用 `pdfplumber` 库将 pdf 文档转换成图像
+1）使用 `pdfplumber` 库将 pdf 文档转换成图像
 ```python
 self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
 ```
-2. 使用视觉大模型识别图像生成文本
+2）使用视觉大模型识别图像生成文本
 ```python
  text = picture_vision_llm_chunk(
     binary=img_binary,
@@ -747,7 +753,7 @@ self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(Byt
 )
 ```
 
-## sections 后处理
+## 5. sections 后处理
 
 经过上述一系列处理得到 sections，针对有图和无图 sections 两种场景，分别对 sections 进行后处理输出。有图 sections 处理逻辑只有在处理 markdown 文档时才用到，在拆解 markdown 介绍，这里来看卡“无图”文档处理逻辑。
 ```python
@@ -762,7 +768,7 @@ else:
 
 >*markdown 解析器会单独解析出文档中的图片存储在 section_images 变量中，还需要将文本与图片进行对应关联，在这个判断中被认为有图（section_images==True）*
 
-### 无图
+### 5.1 无图
 ```python
 chunks = naive_merge(
     sections, int(parser_config.get(
@@ -774,9 +780,9 @@ if kwargs.get("section_only", False):
 res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
 ```
 
-#### naive_merge
+#### 5.1.1 naive_merge
 根据传入的 chunk size 和分隔符，将文本进行规则切分后输出。与 docx 文档的**合并切块**处理逻辑类似。
-#### tokenize_chunks
+#### 5.1.2 tokenize_chunks
 返回统一格式的结构化文档块，作为后续向量化输入。
 - 非 pdf 文档处理，添加位置信息后经过分词器处理输出；
 - pdf 文档处理，会经过 `pdf_parser.crop(ck, need_position=True)` 处理，它是根据文本在 PDF 中的位置，将对应区域裁剪成图片（可多页），并可选返回坐标信息。处理后添加位置信息后经过分词器处理输出。

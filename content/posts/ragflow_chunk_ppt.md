@@ -21,7 +21,7 @@ categories: ["RAGFlow"]
 - 每页生成缩略图，天然支持后续视觉问答与多模态 RAG。
 
 # 手撕版
-## PPT 文件解析
+## 1. PPT 文件解析
 只支持 .pptx 格式的 ppt 文件解析，不兼容旧版本 .ppt 格式文件解析。
 ```python
 if re.search(r"\.pptx?$", filename, re.IGNORECASE):
@@ -45,12 +45,12 @@ class Ppt(PptParser):
     ...
 ```
 
-## PptParser 基类
+## 2. PptParser 基类
 **__extract**：提取 ppt 文本内容，包括文本框文案和表格内容。
 
 **__get_bulleted_text**：提取文本框中文本内容，按照原文本样式输出。
 
-### __extract
+### 2.1 __extract
 提取文本框中文字，换行符分隔返回。
 ```python
 if hasattr(shape, 'has_text_frame') and shape.has_text_frame:
@@ -84,7 +84,7 @@ if shape_type == 6:
     return "\n".join(texts)
 ```
 
-### __get_bulleted_text
+### 2.2 __get_bulleted_text
 按照文档中文本的原始格式输出，保证信息的完整性。
 ```python
 def __get_bulleted_text(self, paragraph):
@@ -107,7 +107,7 @@ def __get_bulleted_text(self, paragraph):
   - 场景：PPT中使用小图片或图标作为项目符号的列表
   - 示例：使用公司logo、自定义图标等作为列表标记的情况
 
-### 实例化方法 \_\_call__
+### 2.3 实例化方法 \_\_call__
 按照阅读习惯按照从上到下，从左到右的方式排列 ppt 页，按页解析获取文本。最终输出包含所有文本的列表。
 ```python
 for shape in sorted(slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
@@ -115,7 +115,7 @@ for shape in sorted(slide.shapes, key=lambda x: ((x.top if x.top is not None els
     if txt:
         texts.append(txt)
 ```
-## Ppt 类
+## 3. Ppt 类
 将每页生成缩略图，
 ```python
 with slides.Presentation(BytesIO(fnm)) as presentation:

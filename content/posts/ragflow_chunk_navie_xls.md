@@ -52,7 +52,7 @@ RAGFlow 为**结构化与半结构化文档**提供了精准高效的轻量级�
 - **语义边界识别**：基于标点和逻辑结构的分块。
 
 # 手撕版
-## Excel & CSV 文档
+## 1. Excel & CSV 文档
 
 根据解析配置，将文档按照 html 方案和默认方案进行切块。
 ```python
@@ -65,7 +65,7 @@ elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         sections = [(_, "") for _ in excel_parser(binary) if _]
     parser_config["chunk_token_num"] = 12800
 ```
-### ExcelParser 类
+### 1.1 ExcelParser 类
 
 **_load_excel_to_workbook**：判断输入文件类型 excel 或 csv，进行相应处理。
 
@@ -75,7 +75,7 @@ elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
 
 **html**：将输入的 excel 或 csv 文件内容转换成 html 表格字符串，并按照指定的 chunk_row 对行进行分块输出。例如 chunk_row 指定 12，则输入的表格会被切分为多个 12 行的小表格输出。
 
-#### _load_excel_to_workbook
+#### 1.1.1 _load_excel_to_workbook
 
 判断输入文件是 excel 还是 csv
 - excel 文件使用 python 库 openpyxl 直接打开处理；
@@ -99,7 +99,7 @@ try:
 
 > file_head.startswith(b"\xd0\xcf\x11\xe0")"：b"\xd0\xcf\x11\xe0"（十六进制 D0 CF 11 E0）对应 OLE Compound File（Compound File Binary Format），这是传统的 .xls（BIFF）和早期 Office 二进制文件的标识。
 
-#### ExcelParser实例化
+#### 1.1.2 ExcelParser实例化
 
 使用解析后的表格数据，遍历**每行内容**拼接成文本作为文本块输出。
 ```python
@@ -126,7 +126,7 @@ for sheetname in wb.sheetnames:
 return res
 ```
 
-## Txt 以及其他代码文档
+## 2. Txt 以及其他代码文档
 ```python
 elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
     callback(0.1, "Start to parse.")
@@ -136,7 +136,7 @@ elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, 
     callback(0.8, "Finish parsing.")
 ```
 
-### TxtParser
+### 2.1 TxtParser
 
 **parser_txt**：按照传入的分隔符和 chunk size，切分文档输出。
 
@@ -147,7 +147,7 @@ def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；
     return self.parser_txt(txt, chunk_token_num, delimiter)
 ```
 
-#### get_text
+#### 2.1.1 get_text
 
 如果传入的二进制内容，则使用从 rag.nlp 引入的方式自动推断出正确的编码，进行解码；否则直接从文件路径读取文本进行拼接返回。
 

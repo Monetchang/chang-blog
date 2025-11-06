@@ -34,8 +34,8 @@ elif re.search(r"\.doc$", filename, re.IGNORECASE):
     ...
 ```
 
-## docx
-### 1. 解析器初始化
+## 1. docx
+### 1.1 解析器初始化
 docx 的解析器是直接引用的 naive 模式下的 docx 解析器，主要对 docx 文档中的段落和表格分别进行处理。详细的 docx 解析器技术拆解可参考《naive parser 语义切块（docx 篇）》。
 ```python
 doc_parser = naive.Docx()
@@ -60,7 +60,7 @@ sections, tbls = doc_parser(
 ]
 '''
 ```
-### 2. 目录表格 过滤
+### 1.2 目录表格 过滤
 过滤 docx 文档中的目录表格。
 ```python
 tbls = _remove_docx_toc_tables(tbls)
@@ -72,7 +72,7 @@ _TOC_TABLE_KEYWORDS = re.compile(r"(table of contents|目录|目次)", re.IGNORE
 _TOC_DOT_PATTERN = re.compile(r"[\.|·]{3,}\s*\d+")
 ```
 
-### 3. 非正文内容过滤
+### 1.3 非正文内容过滤
 过滤解析后文本中的非正文内容，例如：目录，致谢等。
 ```python
 remove_contents_table(sections, eng=is_english(
@@ -85,7 +85,7 @@ re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$",
         re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE))
 ```
 
-### 4. 使用视觉模型识别并总结图片摘要
+### 1.4 使用视觉模型识别并总结图片摘要
 使用 VLM 对文档中的图片进行摘要总结，并以规定格式输出。详细的 vision_figure_parser_docx_wrapper 技术拆解可参考《naive parser 语义切块（docx 篇）》。
 ```python
 tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
@@ -99,15 +99,15 @@ tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=call
 )
 ```
 
-### 5. 移除正文中的图片内容
+### 1.5 移除正文中的图片内容
 ```python
 sections=[(item[0],item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
 ```
 
 docx 处理流程结束后输出，sections（正文文本内容）和 tbls（表格内容，图片内容）。
 
-## pdf
-### 1. 布局识别器
+## 2. pdf
+### 2.1 布局识别器
 与 naive parser 下 pdf 文档的处理一样，分为 DeepDOC 和 Plain Text 两种布局识别器。
 ```python
 if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
@@ -118,7 +118,7 @@ if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
 
 Plain Text 布局识别器实现请参考《naive parser 语义切块（pdf 篇）》 下【Plain Text 布局识别器】模块。
 
-### 2. DeepDOC 布局识别器
+### 2.2 DeepDOC 布局识别器
 与《naive parser 语义切块（pdf 篇）》中相同，Pdf 继承基类 PdfParser。
 ```python
 pdf_parser = Pdf()
@@ -143,7 +143,7 @@ PdfParser 基类的核心功能在《naive parser 语义切块（PDF 篇）》�
 
 - **__filterout_scraps**：对碎片化文本进行二次清理与组装，进一步优化 OCR 文本的完整性。
 
-#### Pdf 类
+#### 2.2.1 Pdf 类
 Pdf 类作为入口点，调用 PdfParser 中提供的功能实现整个复杂的文档处理流程，并记录了各阶段耗时，解析进度等信息，这点与 naive parser 下的 Pdf 类职能一致，**但具体实现内容存在差异**。
 
 ```python
@@ -174,18 +174,18 @@ class Pdf(PdfParser):
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
                 for b in self.boxes], tbls
 ```
-##### _naive_vertical_merge
+##### 2.2.1.1 _naive_vertical_merge
 其中 _naive_vertical_merge 主要目的是将同一列中垂直方向相邻的文本框进行合并。
 
 先过滤无效文本:
 
-**1. 跨页数字符号过滤：移除跨页的页码、编号等无关文本**
+**1）跨页数字符号过滤：移除跨页的页码、编号等无关文本**
 ```python
 if b["page_number"] < b_["page_number"] and re.match(r"[0-9  •一—-]+$", b["text"]):
     bxs.pop(i)
     continue
 ```
-**2. 空文本过滤**
+**2）空文本过滤**
 ```python
 if not b["text"].strip():
     bxs.pop(i)
@@ -194,21 +194,21 @@ if not b["text"].strip():
 
 再通过文本框布局识别，确认文本布局是否符合合并规则：
 
-**1. 布局一致性检查：确保合并的文本框属于同一布局区域**
+**3）布局一致性检查：确保合并的文本框属于同一布局区域**
 ```python
 if not b["text"].strip() or b.get("layoutno") != b_.get("layoutno"):
     i += 1
     continue
 ```
 
-**2. 垂直距离阈值检查：防止合并距离过远的文本框**
+**4）垂直距离阈值检查：防止合并距离过远的文本框**
 ```python
 if b_["top"] - b["bottom"] > mh * 1.5:
     i += 1
     continue
 ```
 
-**3. 水平重叠度检查：确保文本框在水平方向有足够重叠**
+**5）水平重叠度检查：确保文本框在水平方向有足够重叠**
 ```python
 overlap = max(0, min(b["x1"], b_["x1"]) - max(b["x0"], b_["x0"]))
 if overlap / max(1, min(b["x1"] - b["x0"], b_["x1"] - b_["x0"])) < 0.3:
@@ -242,23 +242,24 @@ if (any(feats) and not any(concatting_feats)) or any(detach_feats):
     continue
 ```
 
-##### _merge_with_same_bullet
+##### 2.2.1.2 _merge_with_same_bullet
 将具有相同项目符号的连续文本框合并为一个文本块，保持项目符号列表的结构。
 
 pdf 中可能存在以下项目列表， 一个完整的项目符号列表可能被识别为多个独立的文本框，_merge_with_same_bullet 主要是将同一个项目列表内容进行合并。
 ```python
+# 带有项目符号列表示例
 • 项目一：产品介绍
 • 项目二：技术规格
 • 项目三：价格信息
 ```
 
-### 3. 使用视觉模型识别并总结图片摘要
+### 2.3 使用视觉模型识别并总结图片摘要
 与 docx 处理一致，需要使用 VLM 对文档中的图片进行摘要总结，并以规定格式输出。
 ```python
 tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
 ```
 
-## TXT
+## 3. TXT
 与 naive 模式下获取 txt 文档方案一致，使用 `get_text`。如果传入的二进制内容，则使用从 rag.nlp 引入的方式自动推断出正确的编码，进行解码；否则直接从文件路径读取文本进行拼接返回。
 ```python
 txt = get_text(filename, binary)
@@ -269,7 +270,7 @@ remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
 ```
 
-## HTML
+## 4. HTML
 与 naive 模式下处理 html 文档方案一致，使用 `HtmlParser` 解析器进行文档解析。详细技术实现可参考《naive parser 语义切块（html & json & doc 篇）》
 ```python
 sections = HtmlParser()(filename, binary)
@@ -280,7 +281,7 @@ remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
 ```
 
-## doc
+## 5. doc
 与 naive 模式下处理 doc 文档方案一致，详细技术实现可参考《naive parser 语义切块（html & json & doc 篇）》
 ```python
 doc_parsed = parser.from_buffer(binary)
