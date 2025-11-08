@@ -253,7 +253,7 @@ elif isinstance(msg["content"], dict) and msg["content"].get("type") == "image_u
 
 ### 1.5 消息智能存储（核心功能）
 非程序化记忆处理消息，需要经过智能推理，并决定是否要新增、更新或删除记忆项。
-#### 非智能存储（infer == False）
+#### 1.5.1 非智能存储（infer == False）
 遍历 messages 中的每个消息，忽略 system 消息，对每条非 system 消息进行数据规范化处理后直接存储。
 ```python
 if not infer:
@@ -261,7 +261,7 @@ if not infer:
     msg_embeddings = await asyncio.to_thread(self.embedding_model.embed, msg_content, "add")
     mem_id = await self._create_memory(msg_content, msg_embeddings, per_msg_meta)
 ```
-#### 智能存储（infer == True）
+#### 1.5.2 智能存储（infer == True）
 **<u>1）消息格式转换</u>**
 
 将多轮对话的格式转换成字符串，保留角色信息。
@@ -338,3 +338,166 @@ def get_fact_retrieval_messages(message, is_agent_memory=False):
 
 > *因为 assistant 助理角色和 user 用户角色的信息是不同的， assistant 助理角色的信息是关于助手自身的，而 user 用户角色的信息是关于用户自身的。而在多 agent （指定 agent id 且有助手角色）共同协作的场景下，保持助手角色的定位不偏移很重要。而在 chatbot 的场景下（未指定 agent id 或没有助手角色设定），记住用户的偏好更为重要。因此，需要对提取 assistant 助理角色和 user 用户角色进行区分，以确保提取到的信息是正确的。*
 
+**<u>3）事实提取</u>**
+
+调用大模型对输入信息进行事实提取，并进行代码块，注释等信息清洗，提取出 facts 事实列表作为**候选记忆**。
+```python
+response = await asyncio.to_thread(
+    self.llm.generate_response,
+    messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+    response_format={"type": "json_object"},
+)
+
+response = remove_code_blocks(response)
+new_retrieved_facts = json.loads(response)["facts"]
+```
+
+**<u>4）检索旧记忆</u>**
+
+使用从新对话中提取的事实列表 new_retrieved_facts 对旧记忆进行向量检索，筛选出 Top5 与新对话相关的旧记忆。
+```python
+search_tasks = [process_fact_for_search(fact) for fact in new_retrieved_facts]
+search_results_list = await asyncio.gather(*search_tasks)
+for result_group in search_results_list:
+    retrieved_old_memory.extend(result_group)
+
+# process_fact_for_search 对新记忆进行检索
+async def process_fact_for_search(new_mem_content):
+    embeddings = await asyncio.to_thread(self.embedding_model.embed, new_mem_content, "add")
+    new_message_embeddings[new_mem_content] = embeddings
+    existing_mems = await asyncio.to_thread(
+        self.vector_store.search,
+        query=new_mem_content,
+        vectors=embeddings,
+        limit=5,
+        filters=search_filters,
+    )
+    return [{"id": mem.id, "text": mem.payload.get("data", "")} for mem in existing_mems]
+```
+**<u>5）使用大模型判操作新旧记忆</u>**
+
+调用大模型对新记忆和旧记忆进行判断，判断是否需要对记忆进行操作（添加、更新、删除）。
+
+<u>5.1）构建记忆操作 prompt</u>
+
+```python
+function_calling_prompt = get_update_memory_messages(
+    retrieved_old_memory, new_retrieved_facts, self.config.custom_update_memory_prompt
+)
+```
+
+<u>5.2）构建记忆操作 prompt</u>
+
+```python
+response = await asyncio.to_thread(
+    self.llm.generate_response,
+    messages=[{"role": "user", "content": function_calling_prompt}],
+    response_format={"type": "json_object"},
+)
+```
+
+**<u>6）操作新旧记忆</u>**
+
+根据模型返回的操作结果，对旧记忆进行操作（添加、更新、删除）。
+```python
+for resp in new_memories_with_actions.get("memory", []):
+    if event_type == "ADD":
+        task = asyncio.create_task(self._create_memory(...))
+    elif event_type == "UPDATE":
+        task = asyncio.create_task(self._update_memory(...))
+    elif event_type == "DELETE":
+        task = asyncio.create_task(self._delete_memory(...))
+```
+若判断不需要进行操作，也会更新该条记忆的会话id（run_id）和 agent id，以确保记忆的会话信息与最新对话保持一致。
+```python
+elif event_type == "NONE":
+    task = asyncio.create_task(update_session_ids(memory_id, metadata))
+
+# update_session_ids 更新记忆的会话id（run_id）和 agent id
+async def update_session_ids(mem_id, meta):
+    existing_memory = await asyncio.to_thread(self.vector_store.get, vector_id=mem_id)
+    updated_metadata = deepcopy(existing_memory.payload)
+    if meta.get("agent_id"):
+        updated_metadata["agent_id"] = meta["agent_id"]
+    if meta.get("run_id"):
+        updated_metadata["run_id"] = meta["run_id"]
+    updated_metadata["updated_at"] = datetime.now(pytz.timezone("US/Pacific")).isoformat()
+
+    await asyncio.to_thread(
+        self.vector_store.update,
+        vector_id=mem_id,
+        vector=None,  # Keep same embeddings
+        payload=updated_metadata,
+    )
+    logger.info(f"Updated session IDs for memory {mem_id} (async)")
+```
+
+**<u>7）响应体构建</u>**
+在响应体中标记操作类型（添加、更新、删除）
+```python
+if event_type == "ADD":
+    returned_memories.append({"id": result_id, "memory": resp.get("text"), "event": event_type})
+elif event_type == "UPDATE":
+    returned_memories.append(
+        {
+            "id": mem_id,
+            "memory": resp.get("text"),
+            "event": event_type,
+            "previous_memory": resp.get("old_memory"),
+        }
+    )
+elif event_type == "DELETE":
+    returned_memories.append({"id": mem_id, "memory": resp.get("text"), "event": event_type})
+```
+
+### 1.6 构建知识图谱（可选）
+若配置了图数据库，在存储记忆后，会异步构建知识图谱。mem0 没有重新实现这一功能，而是依赖于配置图数据库自带的添加方法来处理。
+```python
+graph_task = asyncio.create_task(self._add_to_graph(messages, effective_filters))
+```
+
+### 1.7 返回添加结果
+将向量化存储结果和图数据库结果合并返回。向量化存储结果中包含本次对记忆的详细操作结果。
+```python
+vector_store_result, graph_result = await asyncio.gather(vector_store_task, graph_task)
+
+if self.enable_graph:
+    return {
+        "results": vector_store_result,
+        "relations": graph_result,
+    }
+
+return {"results": vector_store_result}
+```
+
+## 2. 召回记忆（核心功能）
+search() 是记忆系统（Memory System）的核心接口，从“记忆存储系统”中根据查询内容（query）搜索相关记忆（memories）。
+它兼具 语义搜索、过滤器筛选、图关系查询 和 结果重排序（rerank） 等功能。
+```python
+MEMORY_INSTANCE.search(query=search_req.query, **params)
+```
+### 2.1 入参解析
+```python
+def search(
+    self,
+    query: str,
+    *,
+    user_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    run_id: Optional[str] = None,
+    limit: int = 100,
+    filters: Optional[Dict[str, Any]] = None,
+    threshold: Optional[float] = None,
+    rerank: bool = True,
+)
+```
+| 参数名         | 类型      | 说明                     |
+| ----------- | ------- | ---------------------- |
+| query     | str   | 搜索关键词或问题（会进行向量化搜索）     |
+| user_id   | str   | 指定用户范围内搜索              |
+| agent_id  | str   | 指定代理/机器人范围内搜索          |
+| run_id    | str   | 限定某次运行/会话的搜索上下文        |
+| limit     | int   | 返回结果数量上限（默认 100）       |
+| filters   | dict  | 元数据筛选条件（支持高级逻辑运算）      |
+| threshold | float | 相似度得分阈值，低于此值的结果被丢弃     |
+| rerank    | bool  | 是否启用 reranker 模型重新排序结果 |
