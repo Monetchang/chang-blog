@@ -38,15 +38,14 @@ Mem0 provides a REST API server (written using FastAPI). Users can perform all o
 Follow the instructions in the [docs](https://docs.mem0.ai/open-source/features/rest-api) to run the server.
 ```
 
-按照 mem0 提供的 REST API，我们来一一拆解每个操作。
+mem0 提供的 REST API，召回，搜索，更新，删除，重置记忆功能都是通过向量数据库提供的功能实现的，这里我们就不做详细解析，有兴趣可以参见源码。今天我们只拆解其中最核心功能：创建记忆。
 
-## 1. 创建记忆（核心功能）
-add() 是记忆系统（Memory System）的核心接口，用于将新的对话、事实或知识片段存入记忆库。
-它支持自动抽取事实、更新已有记忆、以及 procedural（程序性）记忆创建。
+## 创建记忆（核心功能）
+add() 是记忆系统（Memory System）的核心接口，用于将新的对话、事实或知识片段存入记忆库。它支持智能自动抽取事实、更新已有记忆、以及 procedural（程序性）记忆创建。
 ```python
 MEMORY_INSTANCE.add(messages=[m.model_dump() for m in memory_create.messages], **params)
 ```
-### 1.1 入参解析
+### 1. 入参解析
 ```python
 def add(
     self,
@@ -72,7 +71,7 @@ def add(
 | memory_type | str                          | NO  | 记忆类型。支持 procedural_memory（程序性记忆），否则为一般事实或对话记忆                        |
 | prompt      | str                          | NO  | procedural memory 模式下的自定义提示词          |
 
-### 1.2 参数预处理
+### 2. 参数预处理
 ```python
 # 将 user_id、agent_id、run_id 参数加入 metadata 中和构建 effective_filters，构建元数据和过滤条件。
 processed_metadata, effective_filters = _build_filters_and_metadata(
@@ -91,7 +90,7 @@ elif isinstance(messages, dict):
     messages = [messages]
 ```
 
-### 1.3 构建程序化记忆
+### 3. 构建程序化记忆
 使用大模型的能力构建程序化记忆。
 ```python
 if agent_id is not None and memory_type == MemoryType.PROCEDURAL.value:
@@ -99,7 +98,7 @@ if agent_id is not None and memory_type == MemoryType.PROCEDURAL.value:
     return results
 ```
 
-#### 1.3.1 _create_procedural_memory
+#### 3.1 _create_procedural_memory
 
 **<u>1）入参解析</u>**
 ```python
@@ -194,7 +193,7 @@ memory_id = self._create_memory(procedural_memory, {procedural_memory: embedding
 整个程序化记忆的构建过程完成，并且直接返回了 add() 的最终结果。这部分核心在于怎样引导大模型生成稳定高质的过程性记忆。
 
 
-### 1.4 消息中的图像处理
+### 4. 消息中的图像处理
 非程序化记忆处理消息，需要单独处理消息中的图片信息。如果用户配置了 enable_vision 为 True，则会调用对消息中的图片进行解析。
 ```python
 if self.config.llm.config.get("enable_vision"):
@@ -251,9 +250,9 @@ elif isinstance(msg["content"], dict) and msg["content"].get("type") == "image_u
 }
 ```
 
-### 1.5 消息智能存储（核心功能）
+### 5. 消息智能存储（核心功能）
 非程序化记忆处理消息，需要经过智能推理，并决定是否要新增、更新或删除记忆项。
-#### 1.5.1 非智能存储（infer == False）
+#### 5.1 非智能存储（infer == False）
 遍历 messages 中的每个消息，忽略 system 消息，对每条非 system 消息进行数据规范化处理后直接存储。
 ```python
 if not infer:
@@ -261,7 +260,7 @@ if not infer:
     msg_embeddings = await asyncio.to_thread(self.embedding_model.embed, msg_content, "add")
     mem_id = await self._create_memory(msg_content, msg_embeddings, per_msg_meta)
 ```
-#### 1.5.2 智能存储（infer == True）
+#### 5.2 智能存储（infer == True）
 **<u>1）消息格式转换</u>**
 
 将多轮对话的格式转换成字符串，保留角色信息。
@@ -315,7 +314,7 @@ def get_fact_retrieval_messages(message, is_agent_memory=False):
 
 仅提取 assistant 助理角色信息（偏好、性格、能力等），构建 Agent Memory（代理记忆）。
 
-| 模块                  | 作用说明                                             | 示例片段（含中文翻译）                                                                                                                                                                                                                                                   |
+| 模块                  | 作用说明                                             | 示例片段                                                                                                                                                                                                                                                   |
 | ------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **角色定义**         | 指定模型的身份与任务目标，确保模型行为聚焦在“信息提取”而非“对话生成”。            | 你是一名“助手信息整理员”，专门从对话中准确提取并保存关于 AI 助手的事实、偏好和特征。                      |
 | **任务目标**         | 明确目标是提取“关于助手自身”的信息，以支持后续记忆系统。                    | 你的主要任务是从对话中提取与助手自身相关的信息，并将其整理成清晰、可管理的事实。                                                       |
@@ -378,15 +377,38 @@ async def process_fact_for_search(new_mem_content):
 
 调用大模型对新记忆和旧记忆进行判断，判断是否需要对记忆进行操作（添加、更新、删除）。
 
-<u>5.1）构建记忆操作 prompt</u>
+构建记忆操作 prompt
 
 ```python
 function_calling_prompt = get_update_memory_messages(
     retrieved_old_memory, new_retrieved_facts, self.config.custom_update_memory_prompt
 )
 ```
+如果用户提供了自定义的更新记忆提示，将使用用户自定义的提示。否则，将使用全局默认模板 `DEFAULT_UPDATE_MEMORY_PROMPT`。
 
-<u>5.2）构建记忆操作 prompt</u>
+`DEFAULT_UPDATE_MEMORY_PROMPT` 的结构拆解如下：
+| 模块        | 作用说明                                                               | 示例片段                                                                                                                                                                  |
+| --------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 当前记忆上下文构建 | 根据是否存在旧记忆，生成“当前记忆”部分。若存在旧记忆，提供具体内容；若为空，提示当前记忆为空。                 | 若存在旧记忆：<br>“以下是我目前收集的记忆内容，你需要根据此内容进行更新：<br>{旧记忆内容}<br>”<br>若无旧记忆：<br>“当前记忆为空。”                                                                                    |
+| 更新任务说明    | 明确任务：分析新提取的事实，决定应对当前记忆执行的操作（新增 / 更新 / 删除）。                         | “你需要分析这些新事实，判断它们是否应被添加、更新或删除。”<br>{新提取事实}<br>                                                                                                           |
+| 操作行为约束    | 说明每种操作的逻辑含义和规则，防止模型混淆。                                             | - 若当前记忆为空 → 添加新记忆<br>- 若有新增 → 创建新 key 并添加内容<br>- 若有删除 → 删除对应 key<br>- 若有更新 → ID 不变，仅更新内容<br>- 若无变动 → 保持原状                                                                   |
+
+约束生成 JSON 格式信息，需要包含以下字段：
+```python
+{
+    "memory" : [
+        {{
+            "id" : "<ID of the memory>",                # Use existing ID for updates/deletes, or new ID for additions
+            "text" : "<Content of the memory>",         # Content of the memory
+            "event" : "<Operation to be performed>",    # Must be "ADD", "UPDATE", "DELETE", or "NONE"
+            "old_memory" : "<Old memory content>"       # Required only if the event is "UPDATE"
+        }},
+        ...
+    ]
+}
+```
+
+调用大模型生成记忆操作列表
 
 ```python
 response = await asyncio.to_thread(
@@ -450,13 +472,13 @@ elif event_type == "DELETE":
     returned_memories.append({"id": mem_id, "memory": resp.get("text"), "event": event_type})
 ```
 
-### 1.6 构建知识图谱（可选）
-若配置了图数据库，在存储记忆后，会异步构建知识图谱。mem0 没有重新实现这一功能，而是依赖于配置图数据库自带的添加方法来处理。
+### 6. 构建知识图谱（可选）
+若开启了图数据库功能 `enable_graph=True`，在存储向量记忆后，会异步构建知识图谱。mem0 没有重新实现这一功能，而是依赖于配置图数据库自带的添加方法来处理，若用户没有配置图数据库，默认使用 Neo4j。
 ```python
 graph_task = asyncio.create_task(self._add_to_graph(messages, effective_filters))
 ```
 
-### 1.7 返回添加结果
+### 7. 返回添加结果
 将向量化存储结果和图数据库结果合并返回。向量化存储结果中包含本次对记忆的详细操作结果。
 ```python
 vector_store_result, graph_result = await asyncio.gather(vector_store_task, graph_task)
@@ -469,35 +491,3 @@ if self.enable_graph:
 
 return {"results": vector_store_result}
 ```
-
-## 2. 召回记忆（核心功能）
-search() 是记忆系统（Memory System）的核心接口，从“记忆存储系统”中根据查询内容（query）搜索相关记忆（memories）。
-它兼具 语义搜索、过滤器筛选、图关系查询 和 结果重排序（rerank） 等功能。
-```python
-MEMORY_INSTANCE.search(query=search_req.query, **params)
-```
-### 2.1 入参解析
-```python
-def search(
-    self,
-    query: str,
-    *,
-    user_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    limit: int = 100,
-    filters: Optional[Dict[str, Any]] = None,
-    threshold: Optional[float] = None,
-    rerank: bool = True,
-)
-```
-| 参数名         | 类型      | 说明                     |
-| ----------- | ------- | ---------------------- |
-| query     | str   | 搜索关键词或问题（会进行向量化搜索）     |
-| user_id   | str   | 指定用户范围内搜索              |
-| agent_id  | str   | 指定代理/机器人范围内搜索          |
-| run_id    | str   | 限定某次运行/会话的搜索上下文        |
-| limit     | int   | 返回结果数量上限（默认 100）       |
-| filters   | dict  | 元数据筛选条件（支持高级逻辑运算）      |
-| threshold | float | 相似度得分阈值，低于此值的结果被丢弃     |
-| rerank    | bool  | 是否启用 reranker 模型重新排序结果 |
