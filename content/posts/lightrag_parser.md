@@ -255,22 +255,21 @@ DEFAULT_ENTITY_TYPES = [
 
 **1）system prompt**
 
-| 模块名称                            | 中文说明（作用）                                                                       | Prompt 原文示例片段（对应模块）                                                                                                                                           |          |                                                                                            |
-| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| **角色设定（Role）**                  | 规定模型扮演“知识图谱专家”，确保输出专业性并避免闲聊或发挥。                                                | `You are a Knowledge Graph Specialist responsible for extracting entities and relationships from the input text.`                                             |          |                                                                                            |
-| **实体抽取规则：识别与结构要求**              | 定义如何识别实体、实体的命名规范、字段内容要求（名称、类型、描述）。                                             | `Identify clearly defined and meaningful entities… extract: entity_name, entity_type, entity_description`                                                     |          |                                                                                            |
-| **实体输出格式规范**                    | 明确实体输出必须包含 4 个字段，并用 `{tuple_delimiter}` 分隔；指定第一字段必须是 `entity`。                 | `Format: entity{tuple_delimiter}entity_name{tuple_delimiter}entity_type{tuple_delimiter}entity_description`                                                   |          |                                                                                            |
-| **关系抽取规则：识别与拆分**                | 定义如何识别关系、如何将多元关系拆分为二元关系，避免遗漏复杂关系。                                              | `If a single statement describes a relationship involving more than two entities… decompose into multiple binary relationship pairs`                          |          |                                                                                            |
-| **关系字段要求**                      | 要求 source、target、relationship_keywords、relationship_description 四大字段；关键词用逗号分隔。 | `relationship_keywords: One or more high-level keywords… separated by a comma ','`                                                                            |          |                                                                                            |
-| **关系输出格式规范**                    | 明确关系输出必须包含 5 个字段，第一字段必须是 `relation`。                                           | `Format: relation{tuple_delimiter}source_entity{tuple_delimiter}target_entity{tuple_delimiter}relationship_keywords{tuple_delimiter}relationship_description` |          |                                                                                            |
-| **分隔符使用规范（Delimiter Protocol）** | 强制禁止在字段内容中使用 `{tuple_delimiter}`；提供正确/错误示例说明。                                  | `Incorrect Example: ... Tokyo<                                                                                                                                | location | >Tokyo ...`<br>`Correct Example: entity{tuple_delimiter}Tokyo{tuple_delimiter}location...` |
-| **关系方向性与去重规则**                  | 指定关系视为无向，防止重复输出 A→B 和 B→A。                                                     | `Treat all relationships as undirected… Avoid outputting duplicate relationships.`                                                                            |          |                                                                                            |
-| **输出顺序要求**                      | 必须先实体再关系；关系内部按重要性排序。                                                           | `Output all extracted entities first, followed by all extracted relationships.`                                                                               |          |                                                                                            |
-| **客观性与第三人称要求**                  | 禁止使用“this article”“I”等代词，避免含糊实体产生。                                             | `avoid using pronouns such as 'this article', 'I', 'he/she'`                                                                                                  |          |                                                                                            |
-| **语言与专有名词规则**                   | 要求输出语言为 `{language}`；专有名词必须保留原文。                                               | `Proper nouns … should be retained in their original language`                                                                                                |          |                                                                                            |
-| **结束信号**                        | 最后一行必须输出 `{completion_delimiter}`，方便程序检测输出结束。                                  | `Output the literal string {completion_delimiter} only after…`                                                                                                |          |                                                                                            |
-| **示例（Examples）**                | few-shot 示例帮助模型学习正确格式和所需输出风格。                                                  | `{examples}`                                                                                                                                                  |          |                                                                                            |
-| **输入数据声明**                      | 显示实际输入（entity_types + text），引导模型处理正确文本。                                        | `Text: `{input_text}`                                                                                                                                         |          |                                                                                            |
+| 模块名称                            | 中文说明（作用） | Prompt 原文示例片段（对应模块）| 
+| ------------------------------- | ----------------------------------- | ----------------------------------- | 
+| **角色设定（Role）**                  | 规定模型扮演“知识图谱专家”，确保输出专业性并避免闲聊或发挥。                                                | `You are a Knowledge Graph Specialist responsible for extracting entities and relationships from the input text.`                                             | 
+| **实体抽取规则：识别与结构要求**              | 定义如何识别实体、实体的命名规范、字段内容要求（名称、类型、描述）。                                             | `Identify clearly defined and meaningful entities… extract: entity_name, entity_type, entity_description`                                                     |
+| **实体输出格式规范**                    | 明确实体输出必须包含 4 个字段，并用 `{tuple_delimiter}` 分隔；指定第一字段必须是 `entity`。                 | `Format: entity{tuple_delimiter}entity_name{tuple_delimiter}entity_type{tuple_delimiter}entity_description`                                                   | 
+| **关系抽取规则：识别与拆分**                | 定义如何识别关系、如何将多元关系拆分为二元关系，避免遗漏复杂关系。                                              | `If a single statement describes a relationship involving more than two entities… decompose into multiple binary relationship pairs`                          | 
+| **关系字段要求**                      | 要求 source、target、relationship_keywords、relationship_description 四大字段；关键词用逗号分隔。 | `relationship_keywords: One or more high-level keywords… separated by a comma ','`                                                                            | 
+| **关系输出格式规范**                    | 明确关系输出必须包含 5 个字段，第一字段必须是 `relation`。                                           | `Format: relation{tuple_delimiter}source_entity{tuple_delimiter}target_entity{tuple_delimiter}relationship_keywords{tuple_delimiter}relationship_description` | 
+| **分隔符使用规范（Delimiter Protocol）** | 强制禁止在字段内容中使用 `{tuple_delimiter}`；提供正确/错误示例说明。                                  | `Incorrect Example: ... Tokyo< location >Tokyo ...`<br>`Correct Example: entity{tuple_delimiter}Tokyo{tuple_delimiter}location...` |
+| **关系方向性与去重规则**                  | 指定关系视为无向，防止重复输出 A→B 和 B→A。                                                     | `Treat all relationships as undirected… Avoid outputting duplicate relationships.` | 
+| **输出顺序要求**                      | 必须先实体再关系；关系内部按重要性排序。                                                           | `Output all extracted entities first, followed by all extracted relationships.`                                                                               | 
+| **客观性与第三人称要求**                  | 禁止使用“this article”“I”等代词，避免含糊实体产生。                                             | `avoid using pronouns such as 'this article', 'I', 'he/she'`  |   
+| **语言与专有名词规则**                   | 要求输出语言为 `{language}`；专有名词必须保留原文。                                               | `Proper nouns … should be retained in their original language`                                                                                                |   
+| **结束信号**                        | 最后一行必须输出 `{completion_delimiter}`，方便程序检测输出结束。                                  | `Output the literal string {completion_delimiter} only after…`                                                                                                |   
+| **示例（Examples）**                | few-shot 示例帮助模型学习正确格式和所需输出风格。                                                  | `{examples}` |  
 
 **2）初次抽取 prompt（user prompt）**
 | 模块名称            | 中文说明（作用）                            | Prompt 原文示例片段（对应模块）                                                                               |
@@ -279,8 +278,7 @@ DEFAULT_ENTITY_TYPES = [
 | **必须严格遵循格式要求**  | 强调输出必须符合 system prompt 规定的所有格式。     | `Strict Adherence to Format… including output order, field delimiters…`                           |
 | **仅输出内容（禁止解释）** | 禁止输出任何介绍性语言、评注或解释，确保便于程序解析。         | `Output only the extracted list of entities and relationships. Do not include any…`               |
 | **完成信号（结束标记）**  | 输出完成时必须加上 `{completion_delimiter}`。 | `Output {completion_delimiter} as the final line…`                                                |
-| **语言要求**        | 输出语言必须为 `{language}`，专有名词不得翻译。      | `Ensure the output language is {language}. Proper nouns must be kept in their original language.` |
-| **输出占位符**       | 用 `<Output>` 作为模型真正输出内容的位置标识。       | `<Output>`                                                                                        |
+| **语言要求**        | 输出语言必须为 `{language}`，专有名词不得翻译。      | `Ensure the output language is {language}. Proper nouns must be kept in their original language.` | 
 
 **3）重复抽取（gleaning）prompt（user prompt）**
 | 模块         | 中文作用说明                            | 原文示例                                                                                  |
@@ -295,7 +293,7 @@ DEFAULT_ENTITY_TYPES = [
 #### 3.1.2 使用 LLM 提取（自建缓存机制）
 使用 LLM 进行实体抽取和关系抽取，为了避免重复抽取浪费 token，LightRAG 在此设计了缓存机制，默认使用本地 json 文件进行缓存管理。
 ```python
-aasync def use_llm_func_with_cache(
+async def use_llm_func_with_cache(
     user_prompt: str,
     use_llm_func: callable,
     llm_response_cache: "BaseKVStorage | None" = None,
