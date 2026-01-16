@@ -7,14 +7,14 @@ categories: ["RAG"]
 ---
 
 # 引言
-WeKnora 是腾讯开源的一套**生产级 RAG（Retrieval-Augmented Generation）框架**，定位非常明确：解决真实业务场景下“文档复杂、类型多样、规模可控但质量要求极高”的知识增强问题。社区中有人将其视为 *ima* 的开源实现之一，虽然这一说法无从官方考证，但可以确定的是，WeKnora 在工程完整度、边界处理和异常降级策略上，是一套经过实战打磨的系统方案。
+WeKnora 是腾讯开源的一套**生产级 RAG 框架**，定位非常明确：解决真实业务场景下“文档复杂、类型多样、规模可控但质量要求极高”的知识增强问题。社区中有人将其视为 *ima* 的开源实现之一，虽然这一说法无从官方考证，但可以确定的是，WeKnora 在工程完整度、边界处理和异常降级策略上，是一套经过实战打磨的系统方案。
 
 从文档接入、解析、切分、向量化、多模态增强，到知识图谱、问题生成与摘要生成，WeKnora 几乎覆盖了一个完整 RAG 系统在生产环境中可能遇到的所有关键问题。尤其是在**文档解析与 Chunk 构建**这一最容易被低估、却最影响检索与生成质量的环节，WeKnora 给出了一套相当成熟且可复用的设计。
 
 本文将聚焦 WeKnora 的**文档接入与解析体系**，从文件/URL/手动创建三种入口开始，深入拆解其解析器架构、Markdown 统一中间表示、语义切分策略、多模态处理，以及最终如何构建可用于检索与推理的 Chunk 数据结构。
 
 # 上传方式
-## 文件上传（CreateKnowledgeFromFile）
+## 文件上传
 上传文件 → 计算Hash去重 → 存储文件 → 异步解析
 ```go
 // Service 层 - 核心逻辑
@@ -62,7 +62,7 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context, kbID str
     return knowledge, nil
 }
 ```
-## URL 创建（CreateKnowledgeFromURL）
+## URL 创建
 接收URL → URL去重 → 异步抓取解析
 ```go
 // Service 层 - 核心逻辑
@@ -107,7 +107,7 @@ func (s *knowledgeService) CreateKnowledgeFromURL(ctx context.Context,
     return knowledge, nil
 }
 ```
-## 手动创建（CreateManualKnowledge）
+## 手动创建
 接收Markdown内容 → 无去重 → 同步处理
 ```go
 // Service 层 - 核心逻辑（同步处理）
@@ -322,7 +322,7 @@ Document(
     ]
 )
 ```
-*Tips: 这种默认第一行为表头的策略能够最大程度的保持 csv 文档的结构。但对于第一行不是表头的情况，也会有混乱语义的危险*
+*Tips: 这种默认第一行为表头的策略能够最大程度的保持 csv 文档的结构。但对于第一行不是表头的情况，也会有混乱语义的危险。*
 
 ## excel 文档处理
 使用 openpyxl 库读取 excel 文件，将每个工作表转换为文本内容。与 csv 处理策略相同，会默认将每个工作表的第一行作为表头，将其他行作为数据行进行组合。
@@ -483,8 +483,8 @@ def split_text(self, text: str) -> List[Tuple[int, int, str]]:
     chunks = self._merge(splits)
     return chunks
 ```
-### 受保护的 Regex 模式（6 种），对于这些场景不进行截断
-
+### 关键文本保护
+受保护的 Regex 模式（6 种），分别是**LaTeX 数学公式，Markdown 图片链接，Markdown 普通链接，Markdown 表格表头（Header + 分隔行），Markdown 表格内容，代码块头（带语言标识）**，对于这些场景不进行截断
 ```python
 protected_regex: List[str] = [
     # math formula - LaTeX style formulas enclosed in $$
@@ -626,7 +626,7 @@ def _split_protected(self, text: str) -> List[Tuple[int, str]]:
 ```
 
 ### chunk 和保护文本合并 -- _join()
-_join() 的目标是重新整理 chunk list，通过位置计算，确保受保护内容（如完整表格）不会被分割。如果原始 chunk 中的表格被断开了，它会合并这些断开的部分并插入完整的受保护内容。
+_join() 的目标是**重新整理 chunk list，通过位置计算，确保受保护内容（如完整表格）不会被分割**。如果原始 chunk 中的表格被断开了，它会合并这些断开的部分并插入完整的受保护内容。
 ```python
 def _join(self, splits: List[str], protect: List[Tuple[int, str]]) -> List[str]:
     """
@@ -1371,8 +1371,12 @@ retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo)
 
 可以看到，WeKnora 并没有将 RAG 简化为“切 chunk + 向量化”这样的轻量流程，而是非常认真地对待**文档结构、上下文完整性和信息损失控制**这些在生产环境中至关重要的问题。这也是它与许多示例型 RAG 项目最本质的区别。
 
-在下一篇文章中，我们将把视角从「知识如何被构建」转向「知识如何被召回」，重点分析 WeKnora 的**检索体系设计**：  
-它是如何结合 **稀疏索引（关键词/倒排）**、**向量索引（语义检索）** 与 **知识图谱检索** 的？  
+在下一篇文章中，我们将把视角从「知识如何被构建」转向「知识如何被召回」，重点分析 WeKnora 的**检索体系设计**：
+  
+它是如何结合 **稀疏索引（关键词/倒排）**、**向量索引（语义检索）** 与 **知识图谱检索** 的？
+
+在召回中是如何使用文档摘要， chunk 相关提问，图片 ocr 文本以及格式化表格等信息的？
+
 不同召回通道在什么场景下生效，又是如何进行融合、裁剪与排序的？
 
 这将直接决定 WeKnora 在真实问答场景中的“命中率”和“可解释性”，也是整套 RAG 系统中承上启下的关键一环。
