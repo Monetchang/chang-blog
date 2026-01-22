@@ -96,7 +96,7 @@ searchEvents := []types.EventType{
 
 Chat 的相关步骤这里不做拆解，**重点拆解 rag_stream Pipline 中的所有步骤。**
 
-# 查询重写 - REWRITE_QUERY
+# 查询重写
 
 查询重写事件会触发两个插件：
 - PluginRewrite 插件，对问题结合会话上下文进行重写
@@ -282,7 +282,7 @@ graph := &types.GraphData{
 }
 ```
 
-# 多路检索 - CHUNK_SEARCH_PARALLEL
+# 多路检索
 多路检索包含混合检索，知识图谱检索两部分，这两部分并行进行检索。混合检索包含 Web 搜索和知识库向量检索以及 BM25。
 ```go
 // Goroutine 1: 混合检索
@@ -326,7 +326,7 @@ go func() {
 }()
 ```
 
-## 混合检索 - CHUNK_SEARCH
+## 混合检索
 ### 前置检查
 检查是否有搜索目标，如指定知识库，指定知识文档等，是否开启 Web 检索。
 ```go
@@ -760,7 +760,7 @@ if historyResult != nil {
 chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
 ```
 
-## 知识图谱检索 - ENTITY_SEARCH
+## 知识图谱检索
 知识图谱检索相较于混合检索简单很多，和传统方案一样，根据问题中提取的实体进行实体搜索，返回相关 chunk。问题中的实体提取操作在问题重写事件中已经触发。知识图谱默认支持 Neo4j。
 ```go
 graph, err := p.graphRepo.SearchNode(ctx, types.NameSpace{KnowledgeBase: knowledgeBaseID,Knowledge: knowledgeID}, entity)
@@ -768,7 +768,7 @@ graph, err := p.graphRepo.SearchNode(ctx, types.NameSpace{KnowledgeBase: knowled
 
 对召回的 chunk 进行相关信息提取，数据结构转换，去重等操作后，加入检索结果列表 SearchResult。
 
-# 检索重排 - CHUNK_RERANK
+# 检索重排
 ## Rerank 模型选择
 WeKnora 支持 OpenAI（OpenAIReranker）、阿里云 DashScope（AliyunReranker）、智谱（ZhipuReranker），以及 Jina（JinaReranker）四种 rerank 方案，可以根据实际场景指定 RerankModelID 值来进行选择。
 ```go
@@ -925,7 +925,7 @@ if sim > redundancy {
     redundancy = sim
 }
 ```
-# 合并结果 - CHUNK_MERGE
+# 合并结果
 对最终 Results 列表进行合并，优先使用 RerankResult，为空则降级到 SearchResult。
 ## Chunks 列表构建
 按 KnowledgeID 分组，再按 ChunkType 细分，最终输出结构：map[KnowledgeID]map[ChunkType][]SearchResult
@@ -994,7 +994,7 @@ Answer:
 ```go
 merged = mergeOrderedContent(prevContent, baseChunk.Content, nextContent, maxLen)
 ```
-# 结果过滤 - FILTER_TOP_K
+# 结果过滤
 对 Results 列表进行过滤，保留前 topK 文本块。
 ```go
 filterTopK := func(searchResult []*types.SearchResult, topK int) []*types.SearchResult {
@@ -1022,7 +1022,7 @@ if len(chatManage.MergeResult) > 0 {
     })
 }
 ```
-# 数据分析 - DATA_ANALYSIS
+# 数据分析
 如果最终的 Results 列表中关联的文件包含**数据文件（如 .csv、.xlsx、.xls 等）**，则需要对数据进行处理，并通过 LLM 根据用户问题生成查询语句，对数据进行查询输出最终结果添加到 Results 列表中。
 ## 文档识别
 识别 Results 列表中关联的文件是否包含数据文件（如 .csv、.xlsx、.xls 等）。
@@ -1127,7 +1127,7 @@ if err != nil {
 }
 ```
 最后将数据分析结果加入 Results 列表中。
-# 构建最终消息体 - INTO_CHAT_MESSAGE
+# 构建最终消息体
 ## 查询安全性校验
 对用户的输入查询进行安全性校验。**个人认为安全性校验步骤应该在 Pipeline 最开始的步骤中（例如：rewrite）中进行是否更为合适，从源头对危险查询进行拦截，也减少资源浪费。**
 ```go
@@ -1298,7 +1298,7 @@ userContent = strings.ReplaceAll(userContent, "{{current_week}}", weekdayName[ti
 chatManage.UserContent = userContent
 ```
 
-# 流式聊天 - CHAT_COMPLETION_STREAM
+# 流式聊天
 ## 构建消息列表
 消息列表中包含三个信息：
 - System Message：系统提示词
@@ -1326,7 +1326,7 @@ chatManage.History = historyList
 ## 调用 LLM 进行流式回复
 调用 LLM 进行流式回复，将回复内容逐步返回给用户。
 
-# 流式过滤 - STREAM_FILTER
+# 流式过滤
 这里会对输出的内容进行前缀匹配过滤，若用户没有设置自定义的前缀匹配规则，则使用默认的前缀匹配规则。
 - `<think>...</think>`：思考过程标签（会被移除）
 - `NO_MATCH`：无匹配标记
