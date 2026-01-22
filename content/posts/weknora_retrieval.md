@@ -1,12 +1,40 @@
 ---
-title: "【解密源码】WeKnora 文档切分与 Chunk 构建解析：腾讯生产级 RAG 的底层设计 "
-date: 2026-01-16T17:06:10+08:00
+title: "【解密源码】WeKnora RAG 检索与重排解析：生产级系统如何筛选可用 Chunk "
+date: 2026-01-22T11:00:10+08:00
 draft: false
 tags: ["源码","技术","RAG"]
 categories: ["RAG"]
 ---
 
 # 引言
+
+在 RAG 系统中，**Chunk 的质量只解决了一半问题**。
+
+另一半更棘手的问题是：  
+> **在一堆“看起来都相关”的 Chunk 里，究竟哪些才值得被送进 LLM？**
+
+真实工程场景中，检索阶段面临的从来不是“有没有结果”，而是：
+- 召回的 Chunk 数量过多，噪声极高  
+- 不同来源（向量、关键词、FAQ、Web）的结果难以统一  
+- rerank 一旦阈值设高，直接“全军覆没”  
+- 阈值设低，又会把大量低价值 Chunk 一起塞进上下文  
+- 多段 Chunk 来自同一文档，却彼此高度重复  
+
+这些问题，并不能靠一个更大的模型解决。
+
+在上一篇文章中，我们已经分析了 **WeKnora 如何构建结构完整、语义稳定的高质量 Chunk**。而本文关注的是**紧随其后的关键一步**：  
+**当 Chunk 已经准备好之后，WeKnora 是如何在检索与重排阶段，筛选出“真正可用”的那一小部分？**
+
+本文将基于源码，重点拆解 WeKnora 在 RAG 查询过程中围绕以下问题的工程实现：
+
+- 多路召回（向量 / 关键词 / FAQ / Web）如何并行执行并统一结果
+- rerank 在“选不出结果”时如何优雅降级
+- FAQ、历史引用为何拥有更高优先级
+- MMR 与位置先验是如何减少重复 Chunk 的
+- Chunk 如何从“检索结果”一步步演化为最终上下文
+
+本文会**专注于检索、重排与 Chunk 构建这一条最影响 RAG 实际效果的工程链路**。
+
 
 # Pipline
 WeKnora 检索召回采用 Pipline 的设计，在 WeKnora 中，一共包含以下 4 个预定义的 Pipline。
@@ -56,6 +84,7 @@ searchEvents := []types.EventType{
 通过预定义的 Pipline 可以看出 Weknora 将整个传统 RAG 中的 chat retrieval 过程拆分成了多个步骤。
 - CHAT_COMPLETION 普通聊天
 - CHAT_COMPLETION_STREAM 流式聊天
+- STREAM_FILTER 流式过滤
 - LOAD_HISTORY 加载历史记录
 - REWRITE_QUERY 查询重写
 - CHUNK_SEARCH_PARALLEL 多路检索（文档检索 + 实体检索）
@@ -63,9 +92,9 @@ searchEvents := []types.EventType{
 - CHUNK_MERGE 合并结果
 - FILTER_TOP_K 过滤 top K 结果
 - DATA_ANALYSIS 数据分析
-- INTO_CHAT_MESSAGE 将回答转换为聊天消息
+- INTO_CHAT_MESSAGE 构建最终消息体
 
-Chat 的相关步骤这里不做拆解，重点拆解 rag_stream Pipline 中的所有步骤。
+Chat 的相关步骤这里不做拆解，**重点拆解 rag_stream Pipline 中的所有步骤。**
 
 # 查询重写 - REWRITE_QUERY
 
@@ -1098,4 +1127,238 @@ if err != nil {
 }
 ```
 最后将数据分析结果加入 Results 列表中。
-# 答案输出 - INTO_CHAT_MESSAGE
+# 构建最终消息体 - INTO_CHAT_MESSAGE
+## 查询安全性校验
+对用户的输入查询进行安全性校验。**个人认为安全性校验步骤应该在 Pipeline 最开始的步骤中（例如：rewrite）中进行是否更为合适，从源头对危险查询进行拦截，也减少资源浪费。**
+```go
+safeQuery, isValid := utils.ValidateInput(chatManage.Query)
+```
+主要是针对**控制字符，UTF-8 有效性，XSS 攻击**三方面安全性进行校验。
+```go
+func ValidateInput(input string) (string, bool) {
+	if input == "" {
+		return "", true
+	}
+
+	// 检查是否包含控制字符
+	for _, r := range input {
+		if r < 32 && r != 9 && r != 10 && r != 13 {
+			return "", false
+		}
+	}
+
+	// 检查 UTF-8 有效性
+	if !utf8.ValidString(input) {
+		return "", false
+	}
+
+	// 检查是否包含潜在的 XSS 攻击
+	for _, pattern := range xssPatterns {
+		if pattern.MatchString(input) {
+			return "", false
+		}
+	}
+
+	return strings.TrimSpace(input), true
+}
+```
+## 引用信息上下文构建
+### FAQ 分离（可选）
+若开启了 FAQ 优先配置（FAQPriorityEnabled = true），则会将 results 分为 FAQ 和文档两类，并对 FAQ 进行高置信度检测 `Score >= FAQDirectAnswerThreshold`，且确保只返回一个高置信度的 FAQ。
+```go
+if chatManage.FAQPriorityEnabled {
+    for _, result := range chatManage.MergeResult {
+        if result.ChunkType == string(types.ChunkTypeFAQ) {
+            faqResults = append(faqResults, result)
+            // Check if this FAQ has high confidence (above direct answer threshold)
+            if result.Score >= chatManage.FAQDirectAnswerThreshold && !hasHighConfidenceFAQ {
+                hasHighConfidenceFAQ = true
+            }
+        } else {
+            docResults = append(docResults, result)
+        }
+    }
+}
+```
+### 构建引用上下文
+上下文构建分为两种情况：
+1. 开启 FAQ 优先配置，有高置信度的 FAQ 时，将高置信度的 FAQ 加入上下文。
+```go
+if chatManage.FAQPriorityEnabled && len(faqResults) > 0 {
+	// Build structured context with FAQ prioritization
+	contextsBuilder.WriteString("### 资料来源 1：标准问答库 (FAQ)\n")
+	contextsBuilder.WriteString("【高置信度 - 请优先参考】\n")
+	for i, result := range faqResults {
+		passage := getEnrichedPassageForChat(ctx, result)
+		if hasHighConfidenceFAQ && i == 0 {
+			contextsBuilder.WriteString(fmt.Sprintf("[FAQ-%d] ⭐ 精准匹配: %s\n", i+1, passage))
+		} else {
+			contextsBuilder.WriteString(fmt.Sprintf("[FAQ-%d] %s\n", i+1, passage))
+		}
+	}
+
+	if len(docResults) > 0 {
+		contextsBuilder.WriteString("\n### 资料来源 2：参考文档\n")
+		contextsBuilder.WriteString("【补充资料 - 仅在FAQ无法解答时参考】\n")
+		for i, result := range docResults {
+			passage := getEnrichedPassageForChat(ctx, result)
+			contextsBuilder.WriteString(fmt.Sprintf("[DOC-%d] %s\n", i+1, passage))
+		}
+	}
+}
+
+// 输出示例
+### 资料来源 1：标准问答库 (FAQ)
+【高置信度 - 请优先参考】
+[FAQ-1] ⭐ 精准匹配: [FAQ内容]
+[FAQ-2] [FAQ内容]
+
+### 资料来源 2：参考文档
+【补充资料 - 仅在FAQ无法解答时参考】
+[DOC-1] [文档内容]
+[DOC-2] [文档内容]
+```
+2. 未开启 FAQ 优先配置或无高置信度的 FAQ 时，直接将所有文档加入上下文。
+```go
+passages := make([]string, len(chatManage.MergeResult))
+for i, result := range chatManage.MergeResult {
+    passages[i] = getEnrichedPassageForChat(ctx, result)
+}
+for i, passage := range passages {
+    if i > 0 {
+        contextsBuilder.WriteString("\n\n")
+    }
+    contextsBuilder.WriteString(fmt.Sprintf("[%d] %s", i+1, passage))
+}
+// 输出示例
+[1] [内容1]
+
+[2] [内容2]
+
+[3] [内容3]
+```
+## 图片信息处理
+若引用中包含图片信息 ImageInfo，会对图片信息进行解析后，根据 URL 的位置进行相应的内容（图片 OCR 和 图片描述 Caption）的插入。
+```go
+// 查找内容中的所有Markdown图片链接
+matches := markdownImageRegex.FindAllStringSubmatch(content, -1)
+
+// 替换每个图片链接，添加描述和OCR文本
+for _, match := range matches {
+    if len(match) < 3 {
+        continue
+    }
+
+    // 提取图片URL，忽略alt文本
+    imgURL := match[2]
+
+    // 标记该URL已处理
+    processedURLs[imgURL] = true
+
+    // 查找匹配的图片信息
+    imgInfo, found := imageInfoMap[imgURL]
+
+    // 如果找到匹配的图片信息，添加描述和OCR文本
+    if found && imgInfo != nil {
+        replacement := match[0] + "\n"
+        if imgInfo.Caption != "" {
+            replacement += fmt.Sprintf("图片描述: %s\n", imgInfo.Caption)
+        }
+        if imgInfo.OCRText != "" {
+            replacement += fmt.Sprintf("图片文本: %s\n", imgInfo.OCRText)
+        }
+        content = strings.Replace(content, match[0], replacement, 1)
+    }
+}
+
+// 输出示例
+原始内容: ![图表](https://example.com/chart.png)
+
+增强后:
+![图表](https://example.com/chart.png)
+图片描述: 这是一张销售趋势图表
+图片文本: 2024年Q1销售额: 100万
+```
+
+## 构建最终消息体
+替换消息体中的对应变量后，输出最终的消息体 userContent。
+- {{query}}：用户查询（已安全验证）
+- {{contexts}}：构建的上下文内容
+- {{current_time}}：当前时间（格式：2006-01-02 15:04:05）
+- {{current_week}}：当前星期（中文：星期一、星期二等）
+```go
+// Replace placeholders in context template
+userContent := chatManage.SummaryConfig.ContextTemplate
+userContent = strings.ReplaceAll(userContent, "{{query}}", safeQuery)
+userContent = strings.ReplaceAll(userContent, "{{contexts}}", contextsBuilder.String())
+userContent = strings.ReplaceAll(userContent, "{{current_time}}", time.Now().Format("2006-01-02 15:04:05"))
+userContent = strings.ReplaceAll(userContent, "{{current_week}}", weekdayName[time.Now().Weekday()])
+
+// Set formatted content back to chat management
+chatManage.UserContent = userContent
+```
+
+# 流式聊天 - CHAT_COMPLETION_STREAM
+## 构建消息列表
+消息列表中包含三个信息：
+- System Message：系统提示词
+```yaml
+prompt: |
+    你是一个专业的智能信息检索助手，名为WeKnora。你犹如专业的高级秘书，依据检索到的信息回答用户问题，不能利用任何先验知识。
+    当用户提出问题时，助手会基于特定的信息进行解答。助手首先在心中思考推理过程，然后向用户提供答案。
+    ## 回答问题规则
+    - 仅根据检索到的信息中的事实进行回复，不得运用任何先验知识，保持回应的客观性和准确性。
+    - 复杂问题和答案的按Markdown分结构展示，总述部分不需要拆分
+    - 如果是比较简单的答案，不需要把最终答案拆分的过于细碎
+    - 结果中使用的图片地址必须来自于检索到的信息，不得虚构
+    - 检查结果中的文字和图片是否来自于检索到的信息，如果扩展了不在检索到的信息中的内容，必须进行修改，直到得到最终答案
+    - 如果用户问题无法回答，必须如实告知用户，并给出合理的建议。
+
+    ## 输出限制
+    - 以Markdown图文格式输出你的最终结果
+    - 输出内容要保证简短且全面，条理清晰，信息明确，不重复。
+```
+- History Messages：历史对话，User + Assistant 交替。**在 rag_stream 的 pipline 中 rewrite 阶段已经做了历史记录提取，不仅用于问题改写，还用于这个极端的消息列表构建。**
+```go
+chatManage.History = historyList
+```
+- Current User Message：当前用户查询，即为上一个步骤中构建的 userContent。
+## 调用 LLM 进行流式回复
+调用 LLM 进行流式回复，将回复内容逐步返回给用户。
+
+# 流式过滤 - STREAM_FILTER
+这里会对输出的内容进行前缀匹配过滤，若用户没有设置自定义的前缀匹配规则，则使用默认的前缀匹配规则。
+- `<think>...</think>`：思考过程标签（会被移除）
+- `NO_MATCH`：无匹配标记
+若最终没有获取到有效内容，会触发降级策略，降级策略分为两种模式 fix 和 model，默认为 model。
+- fix：输出固定回答
+```yaml
+fallback_response: "抱歉，我无法回答这个问题。"
+```
+- model：调用 LLM 进行回复，使用预定义的 fallback_prompt。
+```yaml
+fallback_prompt: |
+    你是一个专业、友好的AI助手。请根据你的知识直接回答用户的问题。
+
+    ## 回复要求
+    - 直接回答用户的问题
+    - 简洁清晰，言之有物
+    - 如果涉及实时数据或个人隐私信息，诚实说明无法获取
+    - 使用礼貌、专业的语气
+
+    ## 用户的问题是:
+    {{query}}
+```
+
+# 尾言
+
+至此，围绕 WeKnora 的这一组源码解析也告一段落了。
+
+在这个系列中，我们先从**文档解析与切分**入手，分析了 WeKnora 如何在复杂文档场景下构建结构稳定、语义完整的 Chunk；随后又聚焦 **RAG 的检索与重排阶段**，拆解了多路召回、降级策略、去重与筛选等一系列更贴近真实生产环境的工程实现。
+
+如果一定要总结 WeKnora 的特点，它并不追求某一个环节“做到极致”，而是始终围绕一个目标展开：  
+**在不稳定输入、不完美召回和有限上下文的前提下，尽可能稳定地为 LLM 提供可用信息。**
+
+很多实现细节——例如对 FAQ 的优先处理、rerank 失败时的阈值回退、Chunk 合并与位置先验——本身并不复杂，但它们几乎都来自真实系统中的失败经验，而不是论文中的理想假设。这也正是 WeKnora 这套方案最有参考价值的地方。
+
+RAG 从来不是“接个向量库就结束”的问题，而是一套需要不断权衡、取舍和修正的工程系统。希望这个系列对你理解生产级 RAG 的真实形态，能提供一些具体而可落地的参考。
